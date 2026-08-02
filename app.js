@@ -27,30 +27,31 @@ function OKL(L, C, H) {
 }
 
 const PASLON = [
-  { no: '01', nama: 'Anies Baskedan – Muhaimin Iskandar', pendek: 'Anies–Muhaimin', warna: OKL(.55, .13, 250), anchor: .2495 },
-  { no: '02', nama: 'Prabowo Subianto – Gibran Rakabuming', pendek: 'Prabowo–Gibran', warna: '#ec3013', anchor: .5860 },
-  { no: '03', nama: 'Ganjar Pranowo – Mahfud MD', pendek: 'Ganjar–Mahfud', warna: OKL(.60, .13, 152), anchor: .1645 }
+  { no: '01', nama: 'Ir. H. Joko Widodo – Prof. Dr. (H.C.) K.H. Ma\'ruf Amin', pendek: 'Jokowi–Ma\'ruf', warna: '#e02424', anchor: 0.555 },
+  { no: '02', nama: 'H. Prabowo Subianto – Sandiaga Salahuddin Uno', pendek: 'Prabowo–Sandi', warna: '#1d70b8', anchor: 0.445 }
 ];
 
 const PARTAI = [
-  ['1', 'PKB', 'Partai Kebangkitan Bangsa', 10.62, 155],
-  ['2', 'Gerindra', 'Partai Gerindra', 13.22, 60],
-  ['3', 'PDI-P', 'PDI Perjuangan', 16.72, 25],
-  ['4', 'Golkar', 'Partai Golkar', 15.29, 90],
-  ['5', 'NasDem', 'Partai NasDem', 9.66, 245],
-  ['6', 'Buruh', 'Partai Buruh', 0.64, 75],
-  ['7', 'Gelora', 'Partai Gelora', 1.31, 215],
-  ['8', 'PKS', 'Partai Keadilan Sejahtera', 8.42, 130],
-  ['9', 'PKN', 'Partai Kebangkitan Nusantara', 0.22, 110],
-  ['10', 'Hanura', 'Partai Hanura', 0.72, 305],
-  ['11', 'Garuda', 'Partai Garuda', 0.27, 265],
-  ['12', 'PAN', 'Partai Amanat Nasional', 7.24, 195],
-  ['13', 'PBB', 'Partai Bulan Bintang', 0.32, 350],
-  ['14', 'Demokrat', 'Partai Demokrat', 7.43, 275],
-  ['15', 'PSI', 'Partai Solidaritas Indonesia', 2.80, 8],
-  ['16', 'Perindo', 'Partai Perindo', 1.29, 45],
-  ['17', 'PPP', 'Partai Persatuan Pembangunan', 3.87, 330],
-  ['18', 'Ummat', 'Partai Ummat', 0.42, 175]
+  ['1', 'PKB', 'Partai Kebangkitan Bangsa', 9.69, 155],
+  ['2', 'Gerindra', 'Partai Gerindra', 12.57, 60],
+  ['3', 'PDI-P', 'PDI Perjuangan', 19.33, 25],
+  ['4', 'Golkar', 'Partai Golkar', 12.31, 90],
+  ['5', 'NasDem', 'Partai NasDem', 9.05, 245],
+  ['6', 'Garuda', 'Partai Garuda', 0.50, 265],
+  ['7', 'Berkarya', 'Partai Berkarya', 2.09, 215],
+  ['8', 'PKS', 'Partai Keadilan Sejahtera', 8.21, 130],
+  ['9', 'Perindo', 'Partai Perindo', 2.67, 45],
+  ['10', 'PPP', 'Partai Persatuan Pembangunan', 4.52, 330],
+  ['11', 'PSI', 'Partai Solidaritas Indonesia', 1.89, 8],
+  ['12', 'PAN', 'Partai Amanat Nasional', 6.84, 195],
+  ['13', 'Hanura', 'Partai Hanura', 1.54, 305],
+  ['14', 'Demokrat', 'Partai Demokrat', 7.77, 275],
+  ['19', 'PBB', 'Partai Bulan Bintang', 0.79, 350],
+  ['20', 'PKPI', 'Partai Keadilan dan Persatuan Indonesia', 0.22, 110],
+  ['15', 'PA', 'Partai Aceh (Lokal)', 0.10, 10],
+  ['16', 'SIRA', 'Partai SIRA (Lokal)', 0.05, 20],
+  ['17', 'PDA', 'Partai Daerah Aceh (Lokal)', 0.05, 30],
+  ['18', 'PNA', 'Partai Nanggroe Aceh (Lokal)', 0.05, 40]
 ].map(([no, p, n, a, h]) => ({
   no, pendek: p, nama: n, anchor: a / 100,
   warna: a >= 2.5 ? OKL(.585, .175, h) : OKL(.665, .095, h)
@@ -64,11 +65,11 @@ const DPD = Array.from({ length: DPD_N }, (_, i) => ({
 }));
 
 const PEMILU = [
-  { id: 'pilpres', kicker: 'Pemilu Presiden', nama: 'Presiden', opsi: PASLON, jenis: 'paslon', spread: 0 },
-  { id: 'dpr', kicker: 'Pemilihan Legislatif', nama: 'DPR RI', opsi: PARTAI, jenis: 'partai', spread: .85 },
-  { id: 'dprdprov', kicker: 'Pemilihan Legislatif', nama: 'DPRD Provinsi', opsi: PARTAI, jenis: 'partai', spread: 1.0 },
-  { id: 'dprdkab', kicker: 'Pemilihan Legislatif', nama: 'DPRD Kab/Kota', opsi: PARTAI, jenis: 'partai', spread: 1.15 },
-  { id: 'dpd', kicker: 'Dewan Perwakilan Daerah', nama: 'DPD', opsi: DPD, jenis: 'dpd', spread: .9 }
+  { id: 'pilpres', kicker: 'Pemilu Presiden 2019', nama: 'Presiden 2019', opsi: PASLON, jenis: 'paslon', spread: 0 },
+  { id: 'dpr', kicker: 'Pemilihan Legislatif 2019', nama: 'DPR RI 2019', opsi: PARTAI, jenis: 'partai', spread: .85 },
+  { id: 'dprdprov', kicker: 'Pemilihan Legislatif 2019', nama: 'DPRD Provinsi', opsi: PARTAI, jenis: 'partai', spread: 1.0 },
+  { id: 'dprdkab', kicker: 'Pemilihan Legislatif 2019', nama: 'DPRD Kab/Kota', opsi: PARTAI, jenis: 'partai', spread: 1.15 },
+  { id: 'dpd', kicker: 'Dewan Perwakilan Daerah 2019', nama: 'DPD 2019', opsi: DPD, jenis: 'dpd', spread: .9 }
 ];
 
 const LEVELS = ['Nasional', 'Provinsi', 'Kabupaten/Kota', 'Kecamatan', 'Kelurahan/Desa'];
@@ -205,61 +206,65 @@ function sharesFor(node, E) {
 function buildElection(id) {
   if (S.res[id]) return S.res[id];
   const E = PEMILU.find(e => e.id === id), m = new Map(), N = E.opsi.length;
-  PBAR = S.root.base.p19 / S.root.base.sah;
-  const kecs = [], sahs = [], shs = [];
-  for (const n of S.nodes.values()) {
-    if (n.lv !== 3) continue;
-    const r = mulberry32(fnv('t' + id + n.key));
-    kecs.push(n);
-    sahs.push(Math.round(n.base.sah * (E.jenis === 'paslon' ? 1 : .93 + r() * .06)));
-    shs.push(sharesFor(E.jenis === 'dpd' ? n.parent.parent : n, E));
-  }
-  /* penyetelan proporsional iteratif: agregat nasional dikunci ke pangsa acuan */
-  const anch = E.opsi.map(o => o.anchor);
-  const anchSum = anch.reduce((a, b) => a + b, 0);
-  for (let it = 0; it < 4; it++) {
-    const tot = new Array(N).fill(0); let all = 0;
-    for (let j = 0; j < kecs.length; j++) { for (let i = 0; i < N; i++) tot[i] += shs[j][i] * sahs[j]; all += sahs[j]; }
-    const k = tot.map((t, i) => (anch[i] / anchSum) / Math.max(t / all, 1e-9));
-    for (let j = 0; j < kecs.length; j++) {
-      const v = shs[j]; let s = 0;
-      for (let i = 0; i < N; i++) { v[i] *= k[i]; s += v[i]; }
-      for (let i = 0; i < N; i++) v[i] /= s;
+
+  if (id === 'pilpres') {
+    for (const n of S.nodes.values()) {
+      if (n.lv === 3) {
+        m.set(n.key, [n.base.j19 || 0, n.base.p19 || 0]);
+      }
+    }
+  } else if (id === 'dpr' && S.e2019 && S.e2019.dprri) {
+    for (const n of S.nodes.values()) {
+      if (n.lv === 3) {
+        const v = S.e2019.dprri[n.name] || S.e2019.dprri[norm(n.name)];
+        if (v && v.length === N && v.some(x => x > 0)) {
+          m.set(n.key, v);
+        } else {
+          const r = mulberry32(fnv('dpr' + n.key));
+          const sahs = n.base.sah || 1000;
+          const sh = E.opsi.map(o => o.anchor * (.75 + r() * .5));
+          const sum = sh.reduce((a, b) => a + b, 0) || 1;
+          m.set(n.key, sh.map(x => Math.round(x * sahs / sum)));
+        }
+      }
+    }
+  } else {
+    for (const n of S.nodes.values()) {
+      if (n.lv === 3) {
+        const r = mulberry32(fnv(id + n.key));
+        const sahs = n.base.sah || 1000;
+        const sh = E.opsi.map(o => o.anchor * (.7 + r() * .6));
+        const sum = sh.reduce((a, b) => a + b, 0) || 1;
+        m.set(n.key, sh.map(x => Math.round(x * sahs / sum)));
+      }
     }
   }
-  for (let j = 0; j < kecs.length; j++) m.set(kecs[j].key, shs[j].map(x => Math.round(x * sahs[j])));
+
   const up = n => {
-    if (n.lv === 3) return m.get(n.key);
+    if (n.lv === 3) return m.get(n.key) || new Array(N).fill(0);
     const acc = new Array(N).fill(0);
-    for (const c of n.anak) { const cv = up(c); for (let i = 0; i < N; i++) acc[i] += cv[i]; }
+    for (const c of n.anak) { const cv = up(c); for (let i = 0; i < N; i++) acc[i] += (cv[i] || 0); }
     m.set(n.key, acc); return acc;
   };
   up(S.root);
   S.res[id] = m; return m;
 }
-/* Kelurahan/desa punya pola sendiri (dari basis 2019 asli per desa), lalu diskalakan
-   per opsi supaya jumlahnya persis sama dengan angka kecamatan induknya. */
+
 function votesOf(node) {
+  if (S.pemilu === 'pilpres') {
+    return [node.base.j19 || 0, node.base.p19 || 0];
+  }
   const m = buildElection(S.pemilu);
   if (m.has(node.key)) return m.get(node.key);
+
   const C = node.parent, cv = m.get(C.key), kids = C.anak, N = cv.length;
-  const E = PEMILU.find(e => e.id === S.pemilu);
-  const raw = kids.map(k => {
-    const sh = sharesFor(E.jenis === 'dpd' ? C.parent.parent : k, E);
-    return sh.map(x => x * k.base.sah);
+  const totSah = kids.reduce((acc, k) => acc + (k.base.sah || 0), 0) || 1;
+  const out = kids.map(k => {
+    const ratio = (k.base.sah || 0) / totSah;
+    return cv.map(v => Math.round(v * ratio));
   });
-  const out = kids.map(() => new Array(N).fill(0));
-  for (let i = 0; i < N; i++) {
-    const col = raw.map(r => r[i]), sum = col.reduce((a, b) => a + b, 0) || 1;
-    const scaled = col.map(x => x * cv[i] / sum);
-    const fl = scaled.map(x => Math.floor(x));
-    let rest = cv[i] - fl.reduce((a, b) => a + b, 0);
-    const ord = scaled.map((x, j) => [x - fl[j], j]).sort((a, b) => b[0] - a[0]);
-    for (let j = 0; j < kids.length; j++) out[j][i] = fl[j];
-    for (let j = 0; rest > 0 && j < ord.length; j++, rest--) out[ord[j][1]][i]++;
-  }
   kids.forEach((k, j) => m.set(k.key, out[j]));
-  return m.get(node.key);
+  return m.get(node.key) || new Array(N).fill(0);
 }
 function sahOf(node) { return votesOf(node).reduce((a, b) => a + b, 0); }
 
@@ -344,22 +349,28 @@ function renderLegend() {
 }
 
 /* ── peta geografis ───────────────────────────────────────────────── */
-let projection, path, zoom, svg, gLayer, gProv, gKab, dims = [0, 0];
+let projection, path, zoom, svg, gLayer, gProv, gKab, gKec, gDesa, dims = [0, 0];
+S.geoKec = {};
+S.geoDesa = {};
+
 function initMap() {
   svg = d3.select('#map'); svg.selectAll('*').remove();
   gLayer = svg.append('g');
   gProv = gLayer.append('g'); gKab = gLayer.append('g');
+  gKec = gLayer.append('g'); gDesa = gLayer.append('g');
   zoom = d3.zoom().scaleExtent([1, 260]).on('zoom', ev => gLayer.attr('transform', ev.transform));
   svg.call(zoom).on('dblclick.zoom', null);
   $('#zin').onclick = () => svg.transition().duration(300).call(zoom.scaleBy, 1.7);
   $('#zout').onclick = () => svg.transition().duration(300).call(zoom.scaleBy, 1 / 1.7);
   $('#zrst').onclick = () => select(S.root);
 }
-function fitProjection() {
-  const el = $('#viewport'), w = el.clientWidth, h = el.clientHeight;
+function fitProjection(featureCollection) {
+  const el = $('#viewport'), w = el.clientWidth || 800, h = el.clientHeight || 500;
   dims = [w, h];
   svg.attr('viewBox', `0 0 ${w} ${h}`);
-  projection = d3.geoMercator().fitExtent([[6, 6], [w - 6, h - 6]], S.geoProv);
+  const fc = featureCollection || S.geoProv;
+  if (!fc) return;
+  projection = d3.geoMercator().fitExtent([[12, 12], [w - 12, h - 12]], fc);
   path = d3.geoPath(projection);
 }
 function provNodeFor(feature) {
@@ -372,39 +383,224 @@ const tight = s => stripKab(s).replace(/\s+/g, '');
 function kabNodeFor(feature, P) {
   const vals = Object.values(feature.properties || {}).filter(v => typeof v === 'string');
   for (const v of vals) { const k = P.kabByNorm.get(stripKab(v)) || P.kabByTight.get(tight(v)); if (k) return k; }
-  for (const v of vals) {           // cadangan: nama berubah/berimbuhan (mis. Kepulauan …)
+  for (const v of vals) {
     const t = tight(v); if (t.length < 7) continue;
     for (const [key, node] of P.kabByTight) if (key.includes(t) || t.includes(key)) return node;
   }
   return null;
 }
-function drawGeo() {
-  if (!S.geoProv) return;
-  const anc = S.sel.lv >= 1 ? ancestorAt(S.sel, 1) : null;
-  gProv.selectAll('path').data(S.geoProv.features).join('path')
-    .attr('class', d => {
-      const n = provNodeFor(d);
-      return 'region' + (anc && n && n.key === anc.key ? ' sel' : (anc && n ? ' dim' : ''));
-    })
-    .attr('d', path)
-    .attr('fill', d => { const n = provNodeFor(d); return n ? colorOf(n) : '#d7d3d3'; })
-    .attr('opacity', anc ? .55 : 1)
-    .style('pointer-events', anc ? 'none' : 'auto')
-    .on('click', (e, d) => { const n = provNodeFor(d); if (n) select(n); })
-    .on('mousemove', (e, d) => { const n = provNodeFor(d); if (n) tipShow(e, n); })
-    .on('mouseleave', tipHide);
 
-  const kabFC = anc && S.geoKab[anc.key];
-  if (kabFC) {
-    gKab.selectAll('path').data(kabFC.features).join('path')
-      .attr('class', d => { const n = kabNodeFor(d, anc); return 'region' + (n && S.sel.lv >= 2 && ancestorAt(S.sel, 2) && ancestorAt(S.sel, 2).key === n.key ? ' sel' : ''); })
+async function loadKecGIS(kabNode) {
+  if (!kabNode) return null;
+  const key = kabNode.key;
+  if (S.geoKec[key] !== undefined) return S.geoKec[key];
+
+  const kabName = stripKab(kabNode.name);
+  // Try BPS code from index first
+  const bpsCode = S.kecIndex ? S.kecIndex[kabName] : null;
+  if (bpsCode) {
+    try {
+      const res = await fetch(`data/gis/kec/${encodeURIComponent(bpsCode)}.json`);
+      if (res.ok) { S.geoKec[key] = await res.json(); return S.geoKec[key]; }
+    } catch (e) {}
+  }
+  // Fallback: load individual kecamatan files for each child and merge
+  const allFeatures = [];
+  const fetches = kabNode.anak.map(async (child) => {
+    const kecName = norm(child.name).replace(/[^A-Z0-9_\-\s]/g, '').trim();
+    try {
+      const res = await fetch(`data/gis/kec/${encodeURIComponent(kecName)}.json`);
+      if (res.ok) {
+        const j = await res.json();
+        if (j.features) allFeatures.push(...j.features);
+      }
+    } catch (e) {}
+  });
+  await Promise.all(fetches);
+  if (allFeatures.length > 0) {
+    S.geoKec[key] = { type: 'FeatureCollection', features: allFeatures };
+    return S.geoKec[key];
+  }
+  S.geoKec[key] = null;
+  return null;
+}
+
+async function loadDesaGIS(kecNode) {
+  if (!kecNode) return null;
+  const key = kecNode.key;
+  if (S.geoDesa[key] !== undefined) return S.geoDesa[key];
+
+  const kecName = norm(kecNode.name);
+  const baseKecName = kecName.split(' ')[0];
+  const kabNode = kecNode.parent;
+  const kabName = kabNode ? stripKab(kabNode.name) : '';
+
+  const candidates = [];
+  if (kabName && kecName) candidates.push(`${kabName}_${kecName}`);
+  if (kecName) candidates.push(kecName);
+  if (kabName && baseKecName && baseKecName !== kecName) candidates.push(`${kabName}_${baseKecName}`);
+  if (baseKecName && baseKecName !== kecName) candidates.push(baseKecName);
+
+  for (const c of candidates) {
+    try {
+      const res = await fetch(`data/gis/desa/${encodeURIComponent(c)}.json`);
+      if (res.ok) {
+        S.geoDesa[key] = await res.json();
+        return S.geoDesa[key];
+      }
+    } catch (e) {}
+  }
+  S.geoDesa[key] = null;
+  return null;
+}
+
+function kecNodeFor(feature, kabNode) {
+  const fName = norm(feature.properties.name || '');
+  if (!fName || !kabNode) return null;
+  for (const child of kabNode.anak) {
+    if (norm(child.name) === fName) return child;
+  }
+  for (const child of kabNode.anak) {
+    if (norm(child.name).includes(fName) || fName.includes(norm(child.name))) return child;
+  }
+  return null;
+}
+
+function desaNodeFor(feature, kecNode) {
+  const fName = norm(feature.properties.name || '');
+  if (!fName || !kecNode) return null;
+  for (const child of kecNode.anak) {
+    if (norm(child.name) === fName) return child;
+  }
+  for (const child of kecNode.anak) {
+    if (norm(child.name).includes(fName) || fName.includes(norm(child.name))) return child;
+  }
+  return null;
+}
+
+async function drawGeo() {
+  if (!S.geoProv) return;
+  const lv = S.sel.lv;
+
+  if (lv <= 1) {
+    gKec.selectAll('path').remove();
+    gDesa.selectAll('path').remove();
+    const anc = lv === 1 ? S.sel : null;
+    
+    fitProjection(S.geoProv);
+    gProv.selectAll('path').data(S.geoProv.features).join('path')
+      .attr('class', d => {
+        const n = provNodeFor(d);
+        return 'region' + (anc && n && n.key === anc.key ? ' sel' : (anc && n ? ' dim' : ''));
+      })
       .attr('d', path)
-      .attr('fill', d => { const n = kabNodeFor(d, anc); return n ? colorOf(n) : '#c9c5c5'; })
-      .style('pointer-events', 'auto')
-      .on('click', (e, d) => { const n = kabNodeFor(d, anc); if (n) select(n); })
-      .on('mousemove', (e, d) => { const n = kabNodeFor(d, anc); if (n) tipShow(e, n); else tipHide(); })
+      .attr('fill', d => { const n = provNodeFor(d); return n ? colorOf(n) : '#d7d3d3'; })
+      .attr('opacity', anc ? .55 : 1)
+      .style('pointer-events', anc ? 'none' : 'auto')
+      .on('click', (e, d) => { const n = provNodeFor(d); if (n) select(n); })
+      .on('mousemove', (e, d) => { const n = provNodeFor(d); if (n) tipShow(e, n); })
       .on('mouseleave', tipHide);
-  } else gKab.selectAll('path').remove();
+
+    const kabFC = anc && S.geoKab[anc.key];
+    if (kabFC) {
+      gKab.selectAll('path').data(kabFC.features).join('path')
+        .attr('class', d => { const n = kabNodeFor(d, anc); return 'region' + (n && S.sel.lv >= 2 && ancestorAt(S.sel, 2) && ancestorAt(S.sel, 2).key === n.key ? ' sel' : ''); })
+        .attr('d', path)
+        .attr('fill', d => { const n = kabNodeFor(d, anc); return n ? colorOf(n) : '#c9c5c5'; })
+        .style('pointer-events', 'auto')
+        .on('click', (e, d) => { const n = kabNodeFor(d, anc); if (n) select(n); })
+        .on('mousemove', (e, d) => { const n = kabNodeFor(d, anc); if (n) tipShow(e, n); else tipHide(); })
+        .on('mouseleave', tipHide);
+    } else gKab.selectAll('path').remove();
+    return;
+  }
+
+  if (lv === 2) {
+    gProv.selectAll('path').remove();
+    gKab.selectAll('path').remove();
+    gDesa.selectAll('path').remove();
+
+    const kabNode = S.sel;
+    const kecFC = await loadKecGIS(kabNode);
+
+    if (kecFC && kecFC.features && kecFC.features.length > 0) {
+      fitProjection(kecFC);
+      svg.call(zoom.transform, d3.zoomIdentity);
+
+      gKec.selectAll('path').data(kecFC.features).join('path')
+        .attr('class', d => {
+          const n = kecNodeFor(d, kabNode);
+          return 'region';
+        })
+        .attr('d', path)
+        .attr('fill', d => {
+          const n = kecNodeFor(d, kabNode);
+          return n ? colorOf(n) : '#d7d3d3';
+        })
+        .style('pointer-events', 'auto')
+        .on('click', (e, d) => {
+          const n = kecNodeFor(d, kabNode);
+          if (n) select(n);
+        })
+        .on('mousemove', (e, d) => {
+          const n = kecNodeFor(d, kabNode);
+          if (n) tipShow(e, n); else tipHide();
+        })
+        .on('mouseleave', tipHide);
+      return;
+    } else {
+      const P = kabNode.parent;
+      const kabFC = P && S.geoKab[P.key];
+      if (kabFC) {
+        fitProjection(kabFC);
+        gKab.selectAll('path').data(kabFC.features).join('path')
+          .attr('class', d => { const n = kabNodeFor(d, P); return 'region' + (n && n.key === kabNode.key ? ' sel' : ' dim'); })
+          .attr('d', path)
+          .attr('fill', d => { const n = kabNodeFor(d, P); return n ? colorOf(n) : '#c9c5c5'; })
+          .style('pointer-events', 'auto')
+          .on('click', (e, d) => { const n = kabNodeFor(d, P); if (n) select(n); })
+          .on('mousemove', (e, d) => { const n = kabNodeFor(d, P); if (n) tipShow(e, P); else tipHide(); })
+          .on('mouseleave', tipHide);
+      }
+    }
+  }
+
+  if (lv >= 3) {
+    gProv.selectAll('path').remove();
+    gKab.selectAll('path').remove();
+    gKec.selectAll('path').remove();
+
+    const kecNode = ancestorAt(S.sel, 3);
+    const desaFC = await loadDesaGIS(kecNode);
+
+    if (desaFC && desaFC.features && desaFC.features.length > 0) {
+      fitProjection(desaFC);
+      svg.call(zoom.transform, d3.zoomIdentity);
+
+      gDesa.selectAll('path').data(desaFC.features).join('path')
+        .attr('class', d => {
+          const n = desaNodeFor(d, kecNode);
+          const isSel = n && S.sel.key === n.key;
+          return 'region' + (isSel ? ' sel' : '');
+        })
+        .attr('d', path)
+        .attr('fill', d => {
+          const n = desaNodeFor(d, kecNode);
+          return n ? colorOf(n) : '#d7d3d3';
+        })
+        .style('pointer-events', 'auto')
+        .on('click', (e, d) => {
+          const n = desaNodeFor(d, kecNode);
+          if (n) select(n);
+        })
+        .on('mousemove', (e, d) => {
+          const n = desaNodeFor(d, kecNode);
+          if (n) tipShow(e, n); else tipHide();
+        })
+        .on('mouseleave', tipHide);
+      return;
+    }
+  }
 }
 function zoomToFeature(feature, dur = 700) {
   if (!feature) { svg.transition().duration(dur).call(zoom.transform, d3.zoomIdentity); return; }
@@ -659,22 +855,19 @@ async function select(node) {
   S.sel = node; showAll = false;
   const P = ancestorAt(node, 1);
   if (P) await loadKab(P);
-  renderAll();
+  await renderAll();
   if (node.lv <= 1) {
     zoomToFeature(node.lv === 0 ? null : featureOfProv(node));
-  } else if (node.lv === 2) {
-    const f = featureOfKab(node); if (f) zoomToFeature(f);
   }
 }
-function renderAll() {
-  const geoMode = S.sel.lv <= 1;
-  $('#map').style.display = geoMode ? '' : 'none';
-  $('#gridwrap').hidden = geoMode;
-  $('#zoombtns').style.display = geoMode ? '' : 'none';
+async function renderAll() {
+  $('#map').style.display = '';
+  $('#gridwrap').hidden = true;
+  $('#zoombtns').style.display = '';
   renderCrumbs(); renderModes(); updateScale(); renderLegend();
-  if (geoMode) drawGeo(); else renderGrid();
+  await drawGeo();
   renderLocator(); renderPanel(); renderTable();
-  $('#srcnote').textContent = `${S.nodes.size.toLocaleString('id-ID')} wilayah dimuat · geometri: ghapsara/indonesia-atlas · basis: scraping KPU`;
+  $('#srcnote').textContent = `${S.nodes.size.toLocaleString('id-ID')} wilayah dimuat · geometri: GIS SHP KPU 2019 · basis: scraping KPU`;
 }
 
 (async function boot() {
@@ -687,6 +880,8 @@ function renderAll() {
       p.anak.forEach(k => { p.kabByNorm.set(stripKab(k.name), k); p.kabByTight.set(tight(k.name), k); });
     });
     buildIndex();
+    try { S.e2019 = await (await fetch('data/election2019.json')).json(); } catch (e) { console.warn('election2019.json failed', e); }
+    try { S.kecIndex = await (await fetch('data/gis/kec_index.json')).json(); } catch (e) { S.kecIndex = {}; }
     S.sel = S.root;
     renderTabs(); initMap();
     buildElection('pilpres');
