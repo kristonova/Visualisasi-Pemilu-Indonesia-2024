@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Peta Hasil Pemilu Indonesia 2024</title>
+<link rel="stylesheet" href="_ds/modernist-08f2ce11-9c6c-4c9b-85e2-8f04413f9a7a/styles.css">
+<script src="https://unpkg.com/d3@7.9.0/dist/d3.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/topojson-client@3.1.0/dist/topojson-client.min.js" integrity="sha384-Ukv1p/xTma6P4/2bY5KzWBw+ydSpXmhCMtyciIQVDJ1RmOxtCYNMF1uXT9T63H67" crossorigin="anonymous"></script>
+<style>
+  html,body{height:100%}
+  body{overflow:hidden;font-size:14px}
+  #app{display:flex;flex-direction:column;height:100vh;min-height:0}
+
+  /* ── masthead ─────────────────────────────────────────── */
+  .mast{display:flex;align-items:center;gap:var(--space-4);padding:10px var(--space-4);
+        border-bottom:2px solid var(--color-divider);flex:none}
+  .mast-brand{font-family:var(--font-heading);font-weight:800;font-size:17px;letter-spacing:-.02em;
+        display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+  .mast-brand b{color:var(--color-accent)}
+  .mast-sub{font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+        color:color-mix(in srgb,var(--color-text) 55%,transparent)}
+  .spacer{margin-left:auto}
+  .searchwrap{position:relative;width:min(300px,34vw)}
+  .searchwrap .input{height:32px;min-height:32px;font-size:13px}
+  .results{position:absolute;top:36px;left:0;right:0;z-index:60;max-height:340px;overflow:auto;
+        background:var(--color-bg);border:1px solid var(--color-divider);box-shadow:var(--shadow-lg)}
+  .results button{display:block;width:100%;text-align:left;border:0;background:none;cursor:pointer;
+        font:inherit;font-size:12.5px;padding:6px 10px;border-bottom:1px solid color-mix(in srgb,var(--color-text) 10%,transparent)}
+  .results button:hover{background:var(--color-accent-100)}
+  .results .rl{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+        color:color-mix(in srgb,var(--color-text) 50%,transparent)}
+
+  /* ── election tabs ────────────────────────────────────── */
+  .tabs{display:flex;border-bottom:2px solid var(--color-divider);flex:none;overflow-x:auto}
+  .tab{flex:1 0 auto;min-width:132px;padding:9px var(--space-3) 8px;cursor:pointer;background:none;
+       border:0;border-right:1px solid var(--color-divider);text-align:left;font:inherit;color:inherit}
+  .tab:last-child{border-right:0}
+  .tab .tk{display:block;font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+       color:color-mix(in srgb,var(--color-text) 50%,transparent)}
+  .tab .tn{display:block;font-family:var(--font-heading);font-weight:800;font-size:15px;line-height:1.15;letter-spacing:-.01em}
+  .tab:hover{background:color-mix(in srgb,var(--color-text) 6%,transparent)}
+  .tab[aria-selected=true]{background:var(--color-accent);color:var(--color-bg)}
+  .tab[aria-selected=true] .tk{color:color-mix(in srgb,#fff 78%,transparent)}
+
+  /* ── stage ────────────────────────────────────────────── */
+  .stage{display:grid;grid-template-columns:minmax(0,1fr) 384px;flex:1;min-height:0}
+  .mapcol{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:2px solid var(--color-divider)}
+  .crumbbar{display:flex;align-items:center;gap:6px;padding:7px var(--space-3);flex:none;
+       border-bottom:1px solid var(--color-divider);overflow-x:auto;white-space:nowrap}
+  .crumb{border:0;background:none;font:inherit;font-size:12px;cursor:pointer;padding:2px 5px;color:inherit}
+  .crumb:hover{color:var(--color-accent)}
+  .crumb[aria-current=true]{font-family:var(--font-heading);font-weight:800}
+  .crumbsep{opacity:.4;font-size:11px}
+
+  .modebar{display:flex;align-items:center;gap:var(--space-3);padding:6px var(--space-4) 6px var(--space-3);flex:none;
+       border-bottom:1px solid var(--color-divider);flex-wrap:wrap}
+  .modelab{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+       color:color-mix(in srgb,var(--color-text) 50%,transparent)}
+  .seg-opt{padding:4px 9px;font-size:12px}
+  select.input{height:28px;min-height:28px;font-size:12px;width:auto;padding:2px 6px}
+
+  .viewport{position:relative;flex:1;min-height:0;overflow:hidden;background:var(--color-surface)}
+  .viewport svg{display:block;width:100%;height:100%;cursor:grab}
+  .viewport svg.dragging{cursor:grabbing}
+  .region{stroke:var(--color-bg);stroke-width:.6;vector-effect:non-scaling-stroke;stroke-linejoin:round;cursor:pointer}
+  .region:hover{stroke:var(--color-text);stroke-width:1.6}
+  .region.sel{stroke:var(--color-text);stroke-width:1.6}
+  .region.dim{opacity:.22}
+  .outline{fill:none;stroke:color-mix(in srgb,var(--color-text) 34%,transparent);stroke-width:.7;pointer-events:none}
+
+  /* grid cartogram */
+  .gridwrap{position:absolute;inset:0;overflow:auto;padding:var(--space-3) var(--space-3) 104px}
+  .cellgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:1px;
+       background:color-mix(in srgb,var(--color-text) 18%,transparent);border:1px solid color-mix(in srgb,var(--color-text) 18%,transparent)}
+  .cell{background:var(--color-bg);border:0;font:inherit;text-align:left;cursor:pointer;padding:7px 8px 8px;
+       display:flex;flex-direction:column;gap:5px;min-height:74px}
+  .cell:hover{outline:2px solid var(--color-text);outline-offset:-2px;z-index:2;position:relative}
+  .cell .cn{font-size:11px;line-height:1.2;font-weight:600;overflow:hidden;display:-webkit-box;
+       -webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .cell .cw{font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;margin-top:auto;
+       color:color-mix(in srgb,var(--color-text) 62%,transparent)}
+  .cell .cbar{height:7px;display:flex;gap:1px}
+  .cell .cpct{font-family:var(--font-heading);font-weight:800;font-size:15px;line-height:1}
+  .cell.nodata{opacity:.5;cursor:default}
+  .gridhead{display:flex;align-items:baseline;gap:10px;margin-bottom:var(--space-2);flex-wrap:wrap}
+  .gridhead h4{margin:0}
+  .note{font-size:11px;color:color-mix(in srgb,var(--color-text) 58%,transparent);max-width:62ch}
+
+  .locator{position:absolute;right:10px;bottom:10px;width:184px;background:var(--color-bg);
+       border:1px solid var(--color-divider);padding:5px;pointer-events:none;box-shadow:var(--shadow-md)}
+  .locator .loclab{font-size:9px;letter-spacing:.09em;text-transform:uppercase;
+       color:color-mix(in srgb,var(--color-text) 55%,transparent);margin-bottom:3px}
+  .locator svg{width:100%;height:76px}
+
+  .zoombtns{position:absolute;left:10px;bottom:10px;display:flex;flex-direction:column;gap:1px}
+  .zoombtns button{width:30px;height:30px;border:1px solid var(--color-divider);background:var(--color-bg);
+       font:inherit;font-family:var(--font-heading);font-weight:800;cursor:pointer;line-height:1}
+  .zoombtns button:hover{background:var(--color-accent);color:var(--color-bg)}
+
+  .legend{flex:none;display:flex;align-items:center;gap:var(--space-3);padding:7px var(--space-4) 7px var(--space-3);
+       border-top:1px solid var(--color-divider);flex-wrap:wrap;font-size:11px}
+  .lgi{display:flex;align-items:center;gap:5px}
+  .sw{width:13px;height:13px;flex:none;border:1px solid color-mix(in srgb,var(--color-text) 25%,transparent)}
+  .ramp{display:flex;height:11px;width:132px}
+  .ramp i{flex:1}
+
+  .tip{position:fixed;z-index:90;pointer-events:none;background:var(--color-text);color:var(--color-bg);
+       padding:6px 9px;font-size:11.5px;line-height:1.35;max-width:250px;box-shadow:var(--shadow-md);opacity:0}
+  .tip b{font-family:var(--font-heading);font-weight:800;display:block;font-size:12.5px}
+
+  /* ── analysis panel ───────────────────────────────────── */
+  .panel{overflow-y:auto;min-height:0;display:flex;flex-direction:column}
+  .psec{padding:var(--space-3) var(--space-4);border-bottom:1px solid var(--color-divider)}
+  .psec.tight{padding-block:10px}
+  .ph{font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+      color:color-mix(in srgb,var(--color-text) 52%,transparent);margin-bottom:7px}
+  .rtitle{font-family:var(--font-heading);font-weight:800;font-size:23px;line-height:1.08;letter-spacing:-.02em;margin:0}
+  .rmeta{font-size:11px;color:color-mix(in srgb,var(--color-text) 55%,transparent);margin-top:3px}
+  .winner{display:flex;align-items:center;gap:9px;margin-top:10px;padding:8px 10px;color:var(--color-bg)}
+  .winner .wn{font-family:var(--font-heading);font-weight:800;font-size:15px;line-height:1.1}
+  .winner .wp{margin-left:auto;font-family:var(--font-heading);font-weight:800;font-size:22px;line-height:1}
+
+  .bars{display:flex;flex-direction:column;gap:9px}
+  .bar{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:baseline}
+  .bar .bn{font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;min-width:0}
+  .bar .bn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bar .bv{font-family:var(--font-heading);font-weight:800;font-size:13px;text-align:right;white-space:nowrap}
+  .bar .btrack{grid-column:1/3;height:9px;background:color-mix(in srgb,var(--color-text) 9%,transparent)}
+  .bar .bfill{height:100%}
+  .bar .babs{grid-column:1/3;font-size:10.5px;color:color-mix(in srgb,var(--color-text) 52%,transparent);margin-top:-1px}
+  .dot{width:9px;height:9px;flex:none}
+
+  .kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:12.5px}
+  .kv dt{color:color-mix(in srgb,var(--color-text) 60%,transparent)}
+  .kv dd{margin:0;font-family:var(--font-heading);font-weight:800;text-align:right;font-variant-numeric:tabular-nums}
+  .turnout{height:12px;background:color-mix(in srgb,var(--color-text) 10%,transparent);margin:8px 0 5px}
+  .turnout i{display:block;height:100%;background:var(--color-text)}
+
+  .childlist{display:flex;flex-direction:column;gap:1px}
+  .chi{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;border:0;background:none;
+       font:inherit;cursor:pointer;padding:5px 4px;text-align:left;
+       border-bottom:1px solid color-mix(in srgb,var(--color-text) 10%,transparent)}
+  .chi:hover{background:color-mix(in srgb,var(--color-text) 6%,transparent)}
+  .chi .cnm{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chi .cvp{font-family:var(--font-heading);font-weight:800;font-size:12px;font-variant-numeric:tabular-nums}
+  .cmp{display:grid;grid-template-columns:1fr auto auto;gap:4px 10px;font-size:12px;align-items:baseline}
+  .cmp .h{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+       color:color-mix(in srgb,var(--color-text) 50%,transparent)}
+  .cmp b{font-family:var(--font-heading);font-weight:800;font-variant-numeric:tabular-nums}
+  .delta{font-variant-numeric:tabular-nums;font-size:11.5px}
+
+  .more{border:0;background:none;font:inherit;font-size:11.5px;color:var(--color-accent);cursor:pointer;
+       padding:5px 0 0;text-align:left}
+  .more:hover{text-decoration:underline}
+
+  .banner{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;background:var(--color-accent-100);
+       border-left:3px solid var(--color-accent);font-size:11.5px;line-height:1.45}
+  .banner b{font-family:var(--font-heading);font-weight:800}
+
+  /* ── data table ───────────────────────────────────────── */
+  .tablewrap{flex:none;max-height:34vh;overflow:auto;border-top:2px solid var(--color-divider);display:none}
+  .tablewrap.open{display:block}
+  .table{font-size:12.5px}
+  .table th{position:sticky;top:0;background:var(--color-bg);z-index:3;cursor:pointer;white-space:nowrap;padding:6px 10px}
+  .table th:hover{color:var(--color-accent)}
+  .table td{padding:4px 10px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .table td .dot{display:inline-block;margin-right:5px;vertical-align:baseline}
+  .table td.nm{font-weight:600;cursor:pointer}
+  .table td.nm:hover{color:var(--color-accent)}
+  .tbar{display:flex;align-items:center;gap:var(--space-3);padding:6px var(--space-3);
+       border-top:2px solid var(--color-divider);flex:none;font-size:11.5px}
+  .tbar button{border:1px solid var(--color-divider);background:none;font:inherit;font-size:11.5px;
+       padding:3px 9px;cursor:pointer}
+  .tbar button:hover{background:var(--color-text);color:var(--color-bg)}
+  .foot{margin-left:auto;color:color-mix(in srgb,var(--color-text) 52%,transparent)}
+
+  .loading{position:absolute;inset:0;display:grid;place-items:center;font-size:12px;
+       background:color-mix(in srgb,var(--color-bg) 80%,transparent);z-index:20}
+
+  @media (max-width:1080px){
+    body{overflow-x:hidden;overflow-y:auto}
+    #app{height:auto;min-height:100vh}
+    .stage{grid-template-columns:1fr}
+    .mapcol{border-right:0;border-bottom:2px solid var(--color-divider)}
+    .viewport{flex:none;height:min(64vh,560px)}
+    .panel{overflow:visible}
+    .tablewrap{max-height:none}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="mast">
+    <div class="mast-brand"><span>PEMILU <b>2024</b></span><span class="mast-sub">Peta hasil berjenjang</span></div>
+    <div class="spacer"></div>
+    <div class="searchwrap">
+      <input class="input" id="q" type="search" placeholder="Cari provinsi, kabupaten, kecamatan, desa…" autocomplete="off">
+      <div class="results" id="qr" hidden></div>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+
+  <main class="stage">
+    <div class="mapcol">
+      <div class="crumbbar" id="crumbs"></div>
+      <div class="modebar">
+        <span class="modelab">Pewarnaan</span>
+        <div class="seg" id="modeseg"></div>
+        <span class="modelab" id="focuslab" hidden>Fokus</span>
+        <select class="input" id="focussel" hidden></select>
+        <span class="spacer"></span>
+        <span class="modelab" id="viewinfo"></span>
+      </div>
+      <div class="viewport" id="viewport">
+        <svg id="map"></svg>
+        <div class="gridwrap" id="gridwrap" hidden></div>
+        <div class="locator" id="locator" hidden><div class="loclab" id="loclab"></div><svg id="locsvg"></svg></div>
+        <div class="zoombtns" id="zoombtns"><button id="zin" title="Perbesar">+</button><button id="zout" title="Perkecil">−</button><button id="zrst" title="Kembali ke awal" style="font-size:11px">⌂</button></div>
+        <div class="loading" id="loading">Memuat data…</div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <aside class="panel" id="panel"></aside>
+  </main>
+
+  <div class="tbar">
+    <button id="ttoggle">Tabel rincian</button>
+    <button id="tcsv">Unduh CSV</button>
+    <span class="foot" id="srcnote"></span>
+  </div>
+  <div class="tablewrap" id="tablewrap"><table class="table" id="dtable"></table></div>
+</div>
+<div class="tip" id="tip"></div>
+<script src="app.js"></script>
+</body>
+</html>
