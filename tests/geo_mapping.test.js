@@ -2,135 +2,107 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const path = require('path');
+const app = require('../app.js');
 
-const source = fs.readFileSync('app.js', 'utf8');
-const wilayah = JSON.parse(fs.readFileSync('data/wilayah.json', 'utf8'));
-const kecIndex = JSON.parse(fs.readFileSync('data/gis/kec_index.json', 'utf8'));
+const wilayah = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'wilayah.json'), 'utf8'));
+const election = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'election2019.json'), 'utf8'));
 
-const norm = s => String(s).toUpperCase()
-  .replace(/DAERAH ISTIMEWA|DAERAH KHUSUS IBUKOTA|PROVINSI|^DKI |^DI /g, ' ')
-  .replace(/[^A-Z]+/g, ' ').trim();
+assert.strictEqual(wilayah.schema, 2, 'wilayah.json harus memakai schema 2');
+assert.strictEqual(election.schema, 2, 'election2019.json harus memakai schema 2');
+assert.deepStrictEqual(wilayah.contests, app.CONTEST_ORDER, 'wilayah memuat tepat empat kontes nyata');
+assert.deepStrictEqual(election.contests.map(contest => contest.id), app.CONTEST_ORDER,
+  'hasil memuat tepat empat kontes nyata dan tanpa DPD');
+assert.deepStrictEqual(election.stats, [
+  'total-pemilih', 'total-pengguna', 'suara-total', 'suara-sah',
+  'suara-tidak-sah', 'tps', 'validated-tps', 'blank-tps', 'outlier-vote-tps'
+]);
 
-// Evaluasi fungsi resolver yang benar-benar dipakai browser, tanpa menjalankan
-// boot DOM aplikasi. Jika implementasinya berubah, fixture di bawah tetap
-// menguji kontrak pemetaan yang sama.
-const resolverStart = source.indexOf('const stripKab');
-const resolverEnd = source.indexOf('function bindKabGeoCodes');
-assert(resolverStart >= 0 && resolverEnd > resolverStart, 'resolver kabupaten/kota tidak ditemukan');
-const resolver = new Function('norm', source.slice(resolverStart, resolverEnd)
-  + '\nreturn { kabNodeFor, kabFeatureType, compact, normKec, compactKec };')(norm);
+const officialPartyNumbers = app.PARTY_SPEC.map(party => party.no);
+assert.deepStrictEqual(officialPartyNumbers, [
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14',
+  '15', '16', '17', '18', '19', '20'
+]);
+assert.deepStrictEqual(app.PARTY_SPEC.map(party => party.column), [
+  'pkb', 'gerinda', 'pdip', 'golkar', 'nasdem', 'garuda', 'berkarya', 'pks',
+  'perindo', 'ppp', 'psi', 'pan', 'hanura', 'demokrat', 'pa', 'sira', 'pda', 'pna',
+  'pbb', 'pkpi'
+]);
 
-const kecStart = source.indexOf('const KEC_GEO_ALIASES');
-const kecEnd = source.indexOf('function bindKecGeoNames');
-assert(kecStart >= 0 && kecEnd > kecStart, 'resolver kecamatan tidak ditemukan');
-const kecNodeFor = new Function('norm', 'normKec', 'compactKec', source.slice(kecStart, kecEnd)
-  + '\nreturn kecNodeFor;')(norm, resolver.normKec, resolver.compactKec);
-
-const desaStart = source.indexOf('const DESA_KAB_LABEL_ALIASES');
-const desaEnd = source.indexOf('async function drawGeo');
-assert(desaStart >= 0 && desaEnd > desaStart, 'resolver desa tidak ditemukan');
-const desaResolver = new Function('norm', 'compact', 'compactKec', source.slice(desaStart, desaEnd)
-  + '\nreturn { desaKabLabels, desaKecLabels, sameKabLabel, sameKecLabel, desaNodeFor };')(
-  norm, resolver.compact, resolver.compactKec
-);
-
-function provinceNode(name) {
-  const raw = wilayah.prov.find(p => p.n.replace(/^\+\s*/, '').toUpperCase() === name);
-  assert(raw, `provinsi fixture tidak ditemukan: ${name}`);
-  const province = { name, key: name, anak: [] };
-  province.anak = raw.kab.map(kab => ({ name: kab.n, key: `${name}|${kab.n}`, parent: province }));
-  return province;
+app.S.root = app.buildTree(wilayah);
+app.installElectionData(election);
+const contests = app.normalizeContests(election.contests);
+assert.deepStrictEqual(contests.map(contest => contest.id), app.CONTEST_ORDER);
+for (const contest of contests.filter(contest => contest.id !== 'pilpres')) {
+  assert.deepStrictEqual(contest.opsi.map(option => option.no), officialPartyNumbers,
+    `${contest.id}: urutan partai UI harus mengikuti nomor surat suara`);
 }
 
-function feature(id, province, kabkot) {
-  return { id, properties: { provinsi: province, kabkot } };
+const firstProvince = app.S.root.anak[0];
+const firstKab = firstProvince.anak[0];
+const firstKec = firstKab.anak[0];
+assert.strictEqual(firstProvince.key, `P${wilayah.prov[0].k}`);
+assert.strictEqual(firstKab.key, `${firstProvince.key}.${wilayah.prov[0].kab[0].k}`);
+assert.strictEqual(firstKec.key, `${firstKab.key}.${wilayah.prov[0].kab[0].kec[0].k}`);
+if (firstKec.anak.length) {
+  assert.strictEqual(firstKec.anak[0].key,
+    `${firstKec.key}.${wilayah.prov[0].kab[0].kec[0].kel[0].k}`);
 }
 
-function expectKab(province, id, atlasProvince, kabkot, expected) {
-  const hit = resolver.kabNodeFor(feature(id, atlasProvince, kabkot), province);
-  assert(hit, `${id} ${kabkot} tidak mendapat pasangan`);
-  assert.strictEqual(hit.name, expected, `${id} ${kabkot} salah pasangan`);
+const kecNodes = [...app.S.nodes.values()].filter(node => node.lv === 3);
+assert.strictEqual(kecNodes.length, Object.keys(election.kec).length,
+  'setiap kecamatan hierarki harus memiliki slot pada indeks hasil');
+
+// Rollup nasional harus merupakan penjumlahan entri kecamatan eksak, bukan
+// generator, imputasi, atau pembagian proporsional.
+for (const contest of contests) {
+  const rootResult = app.resultOf(app.S.root, contest.id);
+  const expectedVotes = new Array(contest.opsi.length).fill(0);
+  const expectedStats = new Array(election.stats.length).fill(0);
+  let covered = 0;
+  for (const node of kecNodes) {
+    const row = election.kec[node.key];
+    const entry = row && row[contest.sourceIndex];
+    if (!entry) continue;
+    covered++;
+    contest.sourceIndexes.forEach((sourceIndex, outputIndex) => {
+      expectedVotes[outputIndex] += Number(entry[0][sourceIndex] || 0);
+    });
+    expectedStats.forEach((_, index) => { expectedStats[index] += Number(entry[1][index] || 0); });
+  }
+  assert.deepStrictEqual(rootResult.votes, expectedVotes, `${contest.id}: rollup suara nasional salah`);
+  assert.deepStrictEqual(rootResult.stats, expectedStats, `${contest.id}: rollup statistik nasional salah`);
+  assert.strictEqual(rootResult.covered, covered, `${contest.id}: cakupan kecamatan salah`);
+  assert.strictEqual(rootResult.total, kecNodes.length, `${contest.id}: denominator cakupan salah`);
 }
 
-const diy = provinceNode('DAERAH ISTIMEWA YOGYAKARTA');
-[
-  ['34-01', 'Kulon Progo', 'KULON PROGO'],
-  ['34-02', 'Bantul', 'BANTUL'],
-  ['34-03', 'Gunung Kidul', 'GUNUNGKIDUL'],
-  ['34-04', 'Sleman', 'SLEMAN'],
-  ['34-71', 'Yogyakarta', 'KOTA YOGYAKARTA'],
-].forEach(([id, atlasName, expected]) => expectKab(diy, id, 'Yogyakarta', atlasName, expected));
+// Data nol/hilang tidak boleh menghasilkan pemenang semu.
+const missing = { lv: 4, key: 'TEST.MISSING', name: 'TANPA DATA', anak: [], parent: firstKec };
+assert.strictEqual(app.winnerOf(missing), null);
+const contestMap = app.S.results.get(app.S.pemilu);
+const tied = { lv: 4, key: 'TEST.TIED', name: 'SERI', anak: [], parent: firstKec };
+contestMap.set(tied.key, {
+  votes: [17, 17], stats: new Array(election.stats.length).fill(0),
+  present: true, covered: 1, total: 1
+});
+assert.deepStrictEqual(app.leadersOf(tied), [0, 1]);
+assert.strictEqual(app.winnerOf(tied), null, 'seri tidak boleh diberikan kepada opsi pertama');
+assert.strictEqual(app.isTie(tied), true);
+const featureA = { properties: { key: firstKec.key } };
+const featureB = { properties: { key: firstKec.key } };
+assert.strictEqual(app.featureNode(featureA), firstKec, 'fitur harus ditautkan lewat properties.key');
+assert.strictEqual(app.featureNode(featureB), firstKec, 'multipart boleh berbagi key yang sama');
+assert.strictEqual(app.featureNode({ properties: { name: firstKec.name } }), null,
+  'nama mirip tidak boleh dipakai sebagai resolver GIS');
 
-// Provinsi eponim: field `provinsi` tidak boleh mengalahkan `kabkot`.
-expectKab(provinceNode('JAMBI'), '15-01', 'Jambi', 'Kerinci', 'KERINCI');
-expectKab(provinceNode('BENGKULU'), '17-01', 'Bengkulu', 'Bengkulu Selatan', 'BENGKULU SELATAN');
+const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+for (const forbidden of ['mulberry32', 'sharesFor', 'sintetis', 'indonesia-atlas', 'topojson.feature', 'kec_index.json']) {
+  assert(!source.includes(forbidden), `jalur lama masih ditemukan: ${forbidden}`);
+}
+assert(source.includes('data/gis/provinsi.json'));
+assert(source.includes('data/election2019/${encodeURIComponent(P.key)}.json'));
+assert(source.includes('pemilu2019-${S.pemilu}-'));
+assert(!source.includes('.slice(0, O.length > 8 ? 8 : O.length)'),
+  'tabel harus menampilkan seluruh 20 partai, bukan hanya delapan pertama');
 
-// Kabupaten/kota senama dibedakan oleh tipe pada suffix ID BPS.
-const gorontalo = provinceNode('GORONTALO');
-expectKab(gorontalo, '75-02', 'Gorontalo', 'Gorontalo', 'GORONTALO.');
-expectKab(gorontalo, '75-71', 'Gorontalo', 'Gorontalo', 'KOTA GORONTALO');
-const jabar = provinceNode('JAWA BARAT');
-expectKab(jabar, '32-01', 'Jawa Barat', 'Bogor', 'BOGOR');
-expectKab(jabar, '32-71', 'Jawa Barat', 'Bogor', 'KOTA BOGOR');
-const ntt = provinceNode('NUSA TENGGARA TIMUR');
-expectKab(ntt, '53-03', 'Nusa Tenggara Timur', 'Kupang', 'KUPANG');
-expectKab(ntt, '53-71', 'Nusa Tenggara Timur', 'Kupang', 'KOTA KUPANG');
-
-// Nama asli yang memuat kata "Kota" bukan otomatis sebuah kota administratif.
-expectKab(provinceNode('KALIMANTAN SELATAN'), '63-02', 'Kalimantan Selatan', 'Kota Baru', 'KOTABARU');
-
-// Atribut upstream salah/bernama lama ditautkan berdasarkan ID stabil.
-expectKab(provinceNode('KALIMANTAN BARAT'), '61-71', 'Kalimantan Barat', 'Mempawah', 'KOTA PONTIANAK');
-expectKab(provinceNode('PAPUA BARAT'), '91-12', 'Papua Barat', 'Manokwari', 'PEGUNUNGAN ARFAK');
-expectKab(provinceNode('SULAWESI BARAT'), '76-05', 'Sulawesi Barat', 'Mamuju Utara', 'PASANGKAYU');
-
-// Danau/waduk/hutan pada atlas bukan wilayah yang dapat diklik.
-assert.strictEqual(resolver.kabFeatureType(feature('18-88', 'Lampung', 'Danau')), 'other');
-assert.strictEqual(resolver.kabNodeFor(feature('18-88', 'Lampung', 'Danau'), provinceNode('LAMPUNG')), null);
-
-// Variasi spasi dan satu salah ketik pada geometri kecamatan DIY.
-const kecParent = (province, kab, names) => {
-  const parentProvince = { name: province };
-  return { name: kab, parent: parentProvince, anak: names.map(name => ({ name })) };
-};
-assert.strictEqual(kecNodeFor({ properties: { name: 'Bambang Lipuro' } }, kecParent('DAERAH ISTIMEWA YOGYAKARTA', 'BANTUL', ['BAMBANGLIPURO'])).name, 'BAMBANGLIPURO');
-assert.strictEqual(kecNodeFor({ properties: { name: 'Plered' } }, kecParent('DAERAH ISTIMEWA YOGYAKARTA', 'BANTUL', ['PLERET'])).name, 'PLERET');
-assert.strictEqual(kecNodeFor({ properties: { name: 'Kota Gede' } }, kecParent('DAERAH ISTIMEWA YOGYAKARTA', 'KOTA YOGYAKARTA', ['KOTAGEDE'])).name, 'KOTAGEDE');
-assert.strictEqual(kecNodeFor({ properties: { name: 'Godeyan' } }, kecParent('DAERAH ISTIMEWA YOGYAKARTA', 'SLEMAN', ['GODEAN'])).name, 'GODEAN');
-assert.strictEqual(kecNodeFor({ properties: { name: 'Kec. Ilir Barat I' } }, kecParent('SUMATERA SELATAN', 'KOTA PALEMBANG', ['ILIR BARAT I'])).name, 'ILIR BARAT I');
-assert.strictEqual(kecNodeFor({ properties: { name: 'Ungaran' } }, kecParent('JAWA TENGAH', 'SEMARANG', ['UNGARAN BARAT', 'UNGARAN TIMUR'])), null);
-
-// Salah ketik generik tidak boleh mengambil geometri milik kabupaten lain.
-assert.strictEqual(kecNodeFor({ properties: { name: 'Sukmajaya' } }, kecParent('JAWA BARAT', 'BOGOR', ['SUKAJAYA'])), null);
-assert.strictEqual(kecNodeFor({ properties: { name: 'Muara Batu' } }, kecParent('ACEH', 'KOTA LHOKSEUMAWE', ['MUARA SATU'])), null);
-assert.strictEqual(kecNodeFor({ properties: { name: 'Muara Jawa' } }, kecParent('KALIMANTAN TIMUR', 'KUTAI BARAT', ['MUARA LAWA'])), null);
-assert.strictEqual(kecNodeFor({ properties: { name: 'Muara Lawa' } }, kecParent('KALIMANTAN TIMUR', 'KUTAI KARTANEGARA', ['MUARA JAWA'])), null);
-
-// Label lama SHP Kota Yogyakarta dan variasi nama kecamatannya tetap diterima,
-// tetapi label kabupaten/kota lain tidak boleh lolos filter yurisdiksi.
-const diyProvince = { name: 'DAERAH ISTIMEWA YOGYAKARTA' };
-const kotaYogyakarta = { name: 'KOTA YOGYAKARTA', parent: diyProvince };
-const kotaGede = {
-  name: 'KOTAGEDE', parent: kotaYogyakarta, geoNames: ['KOTA GEDE'],
-  anak: [{ name: 'PRENGGAN' }, { name: 'PURBAYAN' }, { name: 'REJOWINANGUN' }]
-};
-assert(desaResolver.sameKabLabel('KDY. YOGYAKART', kotaYogyakarta));
-assert(!desaResolver.sameKabLabel('BANTUL', kotaYogyakarta));
-assert(desaResolver.sameKecLabel('KOTA GEDE', kotaGede));
-assert(!desaResolver.sameKecLabel('GODEAN', kotaGede));
-assert.strictEqual(desaResolver.desaNodeFor({ properties: { name: 'Rejo Winangun' } }, kotaGede).name, 'REJOWINANGUN');
-assert.strictEqual(desaResolver.desaNodeFor({ properties: { name: 'Prenggan' } }, kotaGede).name, 'PRENGGAN');
-assert.strictEqual(desaResolver.desaNodeFor({ properties: { name: 'Prenggen' } }, kotaGede), null);
-
-// Indeks kecamatan harus mempertahankan provinsi dan tipe KOTA pada key.
-assert(Object.keys(kecIndex).every(key => key.includes('|')), 'ditemukan key kec_index global/legacy');
-assert(Object.values(kecIndex).every(code => /^\d{4}$/.test(String(code))), 'kode GIS bukan empat digit');
-assert.strictEqual(kecIndex['YOGYAKARTA|BANTUL'], '3402');
-assert.strictEqual(kecIndex['YOGYAKARTA|KOTA YOGYAKARTA'], '3471');
-assert.strictEqual(kecIndex['JAWA BARAT|BANDUNG'], '3206');
-assert.strictEqual(kecIndex['JAWA BARAT|KOTA BANDUNG'], '3273');
-assert.strictEqual(kecIndex['GORONTALO|KOTA GORONTALO'], '7171');
-assert.strictEqual(kecIndex['BANTEN|KOTA SERANG'], '3220');
-assert.strictEqual(kecIndex['KEPULAUAN BANGKA BELITUNG|BANGKA'], '1607');
-
-console.log('geo_mapping.test.js: semua regresi pemetaan lulus');
+console.log('geo_mapping.test.js: skema, rollup eksak, urutan partai, dan pemetaan key lulus');

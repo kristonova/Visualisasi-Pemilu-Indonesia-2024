@@ -1,122 +1,166 @@
-/* Peta Hasil Pemilu Indonesia 2024 — penjelajah berjenjang
-   Struktur wilayah & angka basis 2019 berasal dari hasil scraping KPU milik pengguna
-   (src/dataprov-kec.csv + src/pilpres/*.csv, diagregasi ke data/wilayah.json).
-   Angka 2024 adalah DATA CONTOH deterministik — ganti loader di buildElection() saat CSV 2024 siap. */
+/* Peta hasil Pemilu Indonesia 2019.
+   Hierarki, perolehan suara, statistik TPS, dan geometri dibaca dari artefak lokal
+   yang dibangun dari CSV KPU serta shapefile yang diselaraskan ke hierarki
+   wilayah Pemilu 2019. Geometri bukan klaim snapshot murni pada tanggal pemilu. */
+'use strict';
 
-/* ── util ─────────────────────────────────────────────────────────── */
-const $ = s => document.querySelector(s);
-const fmt = n => (n == null || isNaN(n)) ? '—' : Math.round(n).toLocaleString('id-ID');
-const pct = (x, d = 1) => (x * 100).toFixed(d).replace('.', ',') + '%';
-function fnv(s) { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; }
-function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-const norm = s => s.toUpperCase()
-  .replace(/DAERAH ISTIMEWA|DAERAH KHUSUS IBUKOTA|PROVINSI|^DKI |^DI /g, ' ')
-  .replace(/[^A-Z]+/g, ' ').trim();
+const $ = selector => document.querySelector(selector);
+const number = value => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+};
+const fmt = value => value == null || !Number.isFinite(Number(value))
+  ? '—'
+  : Math.round(Number(value)).toLocaleString('id-ID');
+const pct = (value, digits = 1) => value == null || !Number.isFinite(Number(value))
+  ? '—'
+  : (Number(value) * 100).toFixed(digits).replace('.', ',') + '%';
+const esc = value => String(value == null ? '' : value)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-/* ── definisi pemilu ──────────────────────────────────────────────── */
-/* OKLCH → hex (d3 tidak bisa membaca notasi oklch) */
+/* OKLCH → hex; d3-color pada versi yang dipakai halaman belum membaca OKLCH. */
 function OKL(L, C, H) {
   const h = H * Math.PI / 180, a = C * Math.cos(h), b2 = C * Math.sin(h);
-  const l_ = L + .3963377774 * a + .2158037573 * b2, m_ = L - .1055613458 * a - .0638541728 * b2, s_ = L - .0894841775 * a - 1.2914855480 * b2;
+  const l_ = L + .3963377774 * a + .2158037573 * b2;
+  const m_ = L - .1055613458 * a - .0638541728 * b2;
+  const s_ = L - .0894841775 * a - 1.2914855480 * b2;
   const l = l_ ** 3, m = m_ ** 3, s = s_ ** 3;
   const r = 4.0767416621 * l - 3.3077115913 * m + .2309699292 * s;
   const g = -1.2684380046 * l + 2.6097574011 * m - .3413193965 * s;
   const bb = -.0041960863 * l - .7034186147 * m + 1.7076147010 * s;
-  const f = x => { x = x <= .0031308 ? 12.92 * x : 1.055 * Math.pow(Math.max(x, 0), 1 / 2.4) - .055; return Math.round(Math.min(1, Math.max(0, x)) * 255).toString(16).padStart(2, '0'); };
-  return '#' + f(r) + f(g) + f(bb);
+  const channel = x => {
+    x = x <= .0031308 ? 12.92 * x : 1.055 * Math.pow(Math.max(x, 0), 1 / 2.4) - .055;
+    return Math.round(Math.min(1, Math.max(0, x)) * 255).toString(16).padStart(2, '0');
+  };
+  return '#' + channel(r) + channel(g) + channel(bb);
 }
 
 const PASLON = [
-  { no: '01', nama: 'Ir. H. Joko Widodo – Prof. Dr. (H.C.) K.H. Ma\'ruf Amin', pendek: 'Jokowi–Ma\'ruf', warna: '#e02424', anchor: 0.555 },
-  { no: '02', nama: 'H. Prabowo Subianto – Sandiaga Salahuddin Uno', pendek: 'Prabowo–Sandi', warna: '#1d70b8', anchor: 0.445 }
+  { column: 'pemilih-1', no: '01', pendek: 'Jokowi–Ma\'ruf', nama: 'Ir. H. Joko Widodo – Prof. Dr. (H.C.) K.H. Ma\'ruf Amin', warna: '#e02424' },
+  { column: 'pemilih-2', no: '02', pendek: 'Prabowo–Sandi', nama: 'H. Prabowo Subianto – Sandiaga Salahuddin Uno', warna: '#1d70b8' }
 ];
 
-const PARTAI = [
-  ['1', 'PKB', 'Partai Kebangkitan Bangsa', 9.69, 155],
-  ['2', 'Gerindra', 'Partai Gerindra', 12.57, 60],
-  ['3', 'PDI-P', 'PDI Perjuangan', 19.33, 25],
-  ['4', 'Golkar', 'Partai Golkar', 12.31, 90],
-  ['5', 'NasDem', 'Partai NasDem', 9.05, 245],
-  ['6', 'Garuda', 'Partai Garuda', 0.50, 265],
-  ['7', 'Berkarya', 'Partai Berkarya', 2.09, 215],
-  ['8', 'PKS', 'Partai Keadilan Sejahtera', 8.21, 130],
-  ['9', 'Perindo', 'Partai Perindo', 2.67, 45],
-  ['10', 'PPP', 'Partai Persatuan Pembangunan', 4.52, 330],
-  ['11', 'PSI', 'Partai Solidaritas Indonesia', 1.89, 8],
-  ['12', 'PAN', 'Partai Amanat Nasional', 6.84, 195],
-  ['13', 'Hanura', 'Partai Hanura', 1.54, 305],
-  ['14', 'Demokrat', 'Partai Demokrat', 7.77, 275],
-  ['19', 'PBB', 'Partai Bulan Bintang', 0.79, 350],
-  ['20', 'PKPI', 'Partai Keadilan dan Persatuan Indonesia', 0.22, 110],
-  ['15', 'PA', 'Partai Aceh (Lokal)', 0.10, 10],
-  ['16', 'SIRA', 'Partai SIRA (Lokal)', 0.05, 20],
-  ['17', 'PDA', 'Partai Daerah Aceh (Lokal)', 0.05, 30],
-  ['18', 'PNA', 'Partai Nanggroe Aceh (Lokal)', 0.05, 40]
-].map(([no, p, n, a, h]) => ({
-  no, pendek: p, nama: n, anchor: a / 100,
-  warna: a >= 2.5 ? OKL(.585, .175, h) : OKL(.665, .095, h)
+/* Nomor partai mengikuti surat suara: 1–14, partai lokal Aceh 15–18,
+   lalu PBB 19 dan PKPI 20. `column` mengikuti tajuk CSV sumber. */
+const PARTY_SPEC = [
+  ['pkb', '1', 'PKB', 'Partai Kebangkitan Bangsa', 155],
+  ['gerinda', '2', 'Gerindra', 'Partai Gerindra', 60],
+  ['pdip', '3', 'PDI-P', 'PDI Perjuangan', 25],
+  ['golkar', '4', 'Golkar', 'Partai Golkar', 90],
+  ['nasdem', '5', 'NasDem', 'Partai NasDem', 245],
+  ['garuda', '6', 'Garuda', 'Partai Garuda', 265],
+  ['berkarya', '7', 'Berkarya', 'Partai Berkarya', 215],
+  ['pks', '8', 'PKS', 'Partai Keadilan Sejahtera', 130],
+  ['perindo', '9', 'Perindo', 'Partai Perindo', 45],
+  ['ppp', '10', 'PPP', 'Partai Persatuan Pembangunan', 330],
+  ['psi', '11', 'PSI', 'Partai Solidaritas Indonesia', 8],
+  ['pan', '12', 'PAN', 'Partai Amanat Nasional', 195],
+  ['hanura', '13', 'Hanura', 'Partai Hanura', 305],
+  ['demokrat', '14', 'Demokrat', 'Partai Demokrat', 275],
+  ['pa', '15', 'PA', 'Partai Aceh', 10],
+  ['sira', '16', 'SIRA', 'Partai SIRA', 20],
+  ['pda', '17', 'PDA', 'Partai Daerah Aceh', 30],
+  ['pna', '18', 'PNA', 'Partai Nanggroe Aceh', 40],
+  ['pbb', '19', 'PBB', 'Partai Bulan Bintang', 350],
+  ['pkpi', '20', 'PKPI', 'Partai Keadilan dan Persatuan Indonesia', 110]
+].map(([column, no, pendek, nama, hue], index) => ({
+  column, no, pendek, nama, index,
+  warna: index < 14 ? OKL(.585, .175, hue) : OKL(.665, .105, hue)
 }));
 
-const DPD_N = 12;
-const DPD = Array.from({ length: DPD_N }, (_, i) => ({
-  no: String(i + 1), pendek: 'Calon ' + (i + 1), nama: 'Calon DPD nomor urut ' + (i + 1),
-  anchor: [.16, .13, .11, .095, .085, .075, .065, .058, .05, .045, .04, .035][i],
-  warna: OKL(.42 + (i % 3) * .09, .13, (i * 53 + 20) % 360)
-}));
-
-const PEMILU = [
-  { id: 'pilpres', kicker: 'Pemilu Presiden 2019', nama: 'Presiden 2019', opsi: PASLON, jenis: 'paslon', spread: 0 },
-  { id: 'dpr', kicker: 'Pemilihan Legislatif 2019', nama: 'DPR RI 2019', opsi: PARTAI, jenis: 'partai', spread: .85 },
-  { id: 'dprdprov', kicker: 'Pemilihan Legislatif 2019', nama: 'DPRD Provinsi', opsi: PARTAI, jenis: 'partai', spread: 1.0 },
-  { id: 'dprdkab', kicker: 'Pemilihan Legislatif 2019', nama: 'DPRD Kab/Kota', opsi: PARTAI, jenis: 'partai', spread: 1.15 },
-  { id: 'dpd', kicker: 'Dewan Perwakilan Daerah 2019', nama: 'DPD 2019', opsi: DPD, jenis: 'dpd', spread: .9 }
-];
-
+const PARTY_BY_COLUMN = new Map(PARTY_SPEC.map(p => [p.column, p]));
+const CONTEST_ORDER = ['pilpres', 'dpr', 'dprdprov', 'dprdkab'];
+const CONTEST_LABELS = {
+  pilpres: ['Pemilu Presiden 2019', 'Presiden 2019'],
+  dpr: ['Pemilihan Legislatif 2019', 'DPR RI 2019'],
+  dprdprov: ['Pemilihan Legislatif 2019', 'DPRD Provinsi 2019'],
+  dprdkab: ['Pemilihan Legislatif 2019', 'DPRD Kab/Kota 2019']
+};
 const LEVELS = ['Nasional', 'Provinsi', 'Kabupaten/Kota', 'Kecamatan', 'Kelurahan/Desa'];
 const ANAK = ['Provinsi', 'Kabupaten/Kota', 'Kecamatan', 'Kelurahan/Desa', ''];
+const BGT = '#f3f2f2';
+const NO_DATA = '#d4d1cf';
+const TIE_COLOR = '#8b8581';
 
-/* peta nama provinsi KPU → folder atlas TopoJSON */
-const ATLAS = {
-  'ACEH': 'Aceh', 'SUMATERA UTARA': 'Sumatera Utara', 'SUMATERA BARAT': 'Sumatera Barat',
-  'RIAU': 'Riau', 'JAMBI': 'Jambi', 'SUMATERA SELATAN': 'Sumatera Selatan', 'BENGKULU': 'Bengkulu',
-  'LAMPUNG': 'Lampung', 'KEPULAUAN BANGKA BELITUNG': 'Kepulauan Bangka Belitung',
-  'KEPULAUAN RIAU': 'Kepulauan Riau', 'DKI JAKARTA': 'Jakarta', 'JAWA BARAT': 'Jawa Barat',
-  'JAWA TENGAH': 'Jawa Tengah', 'DAERAH ISTIMEWA YOGYAKARTA': 'Yogyakarta', 'JAWA TIMUR': 'Jawa Timur',
-  'BANTEN': 'Banten', 'BALI': 'Bali', 'NUSA TENGGARA BARAT': 'Nusa Tenggara Barat',
-  'NUSA TENGGARA TIMUR': 'Nusa Tenggara Timur', 'KALIMANTAN BARAT': 'Kalimantan Barat',
-  'KALIMANTAN TENGAH': 'Kalimantan Tengah', 'KALIMANTAN SELATAN': 'Kalimantan Selatan',
-  'KALIMANTAN TIMUR': 'Kalimantan Timur', 'KALIMANTAN UTARA': 'Kalimantan Utara',
-  'SULAWESI UTARA': 'Sulawesi Utara', 'SULAWESI TENGAH': 'Sulawesi Tengah',
-  'SULAWESI SELATAN': 'Sulawesi Selatan', 'SULAWESI TENGGARA': 'Sulawesi Tenggara',
-  'GORONTALO': 'Gorontalo', 'SULAWESI BARAT': 'Sulawesi Barat', 'MALUKU': 'Maluku',
-  'MALUKU UTARA': 'Maluku Utara', 'PAPUA': 'Papua', 'PAPUA BARAT': 'Papua Barat'
-};
-// Dipin agar kontrak field/id atlas tidak berubah tanpa audit pemetaan ulang.
-const GH = 'https://cdn.jsdelivr.net/gh/ghapsara/indonesia-atlas@98ee142f377356ca2b4335d1b89ecfbc668522f1/';
-const slug = s => s.toLowerCase().replace(/\s+/g, '-');
-const ATLAS_EXTRAS = { 'Jakarta': ['kepulauan-seribu-simplified-topo.json'] };
-
-/* ── state ────────────────────────────────────────────────────────── */
+let PEMILU = [];
 const S = {
-  pemilu: 'pilpres', mode: 'margin', fokus: 1, sel: null, root: null,
-  nodes: new Map(), index: [], res: {}, geoProv: null, geoKab: {}, sort: { k: 'v', d: -1 }
+  pemilu: null, mode: 'margin', fokus: 0, sel: null, root: null,
+  nodes: new Map(), index: [], results: new Map(), contestsById: new Map(),
+  statNames: [], statIndex: new Map(), election: null, sourceSummary: null,
+  geoProv: null, geoKab: new Map(), geoKec: new Map(), geoDesa: new Map(),
+  leafLoads: new Map(), leafErrors: new Map(), sort: { k: 'v', d: -1 },
+  mapViewKey: null, mapViewNodeKey: null, mapCollection: null, hasGeoView: false
 };
 
-/* ── bangun pohon wilayah ─────────────────────────────────────────── */
+function columnKey(value) {
+  const key = String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return key === 'gerindra' ? 'gerinda' : key;
+}
+
+function unknownOption(column, index) {
+  const label = String(column || `opsi-${index + 1}`).replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+  return { column, no: String(index + 1), pendek: label, nama: label, warna: OKL(.62, .12, (index * 67) % 360) };
+}
+
+function normalizeContests(rawContests) {
+  const rows = Array.isArray(rawContests) ? rawContests : [];
+  const byId = new Map(rows.map((contest, sourceIndex) => [contest.id, { ...contest, sourceIndex }]));
+  return CONTEST_ORDER.map(id => {
+    const source = byId.get(id);
+    if (!source) return null;
+    let columns = Array.isArray(source.vote_columns) ? source.vote_columns.slice() : [];
+    let ordered;
+    if (id === 'pilpres') {
+      if (!columns.length) columns = PASLON.map(o => o.column);
+      ordered = columns.map((column, sourceIndex) => ({ column, sourceIndex }))
+        .sort((a, b) => {
+          const ai = PASLON.findIndex(o => columnKey(o.column) === columnKey(a.column));
+          const bi = PASLON.findIndex(o => columnKey(o.column) === columnKey(b.column));
+          return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi) || a.sourceIndex - b.sourceIndex;
+        });
+    } else {
+      if (!columns.length) columns = PARTY_SPEC.map(o => o.column);
+      ordered = columns.map((column, sourceIndex) => ({ column, sourceIndex }))
+        .sort((a, b) => {
+          const ap = PARTY_BY_COLUMN.get(columnKey(a.column));
+          const bp = PARTY_BY_COLUMN.get(columnKey(b.column));
+          return (ap ? ap.index : 999) - (bp ? bp.index : 999) || a.sourceIndex - b.sourceIndex;
+        });
+    }
+    const opsi = ordered.map(({ column }, index) => {
+      if (id === 'pilpres') {
+        const option = PASLON.find(o => columnKey(o.column) === columnKey(column));
+        return option ? { ...option } : unknownOption(column, index);
+      }
+      const option = PARTY_BY_COLUMN.get(columnKey(column));
+      return option ? { ...option } : unknownOption(column, index);
+    });
+    const [kicker, nama] = CONTEST_LABELS[id];
+    return {
+      id, kicker, nama, opsi, jenis: id === 'pilpres' ? 'paslon' : 'partai',
+      sourceIndex: source.sourceIndex,
+      sourceIndexes: ordered.map(row => row.sourceIndex),
+      voteColumns: ordered.map(row => row.column)
+    };
+  }).filter(Boolean);
+}
+
+/* ── pohon wilayah dan hasil eksak ───────────────────────────────── */
 function buildTree(raw) {
+  S.nodes = new Map();
   const root = { lv: 0, key: 'ID', name: 'INDONESIA', code: '0', anak: [], parent: null };
-  for (const p of raw.prov) {
-    const P = { lv: 1, key: 'P' + p.k, name: p.n.replace(/^\+\s*/, '').toUpperCase(), code: p.k, anak: [], parent: root };
-    for (const k of p.kab) {
-      const K = { lv: 2, key: P.key + '.' + k.k, name: k.n, code: k.k, anak: [], parent: P };      for (const c of k.kec) {
-        const C = { lv: 3, key: K.key + '.' + c.k, name: c.n, code: c.k, anak: [], parent: K, real: !!c.kel };
-        if (c.kel) {
-          c.kel.forEach((l, i) => {
-            const d = l.d;
-            C.anak.push({
-              lv: 4, key: C.key + '.' + i, name: l.n, code: '—', anak: [], parent: C, real: true,
-              base: { dpt: d[2], guna: d[3], sah: d[4], tsah: d[5], tps: d[6], p19: d[1], j19: d[0] }
-            });
+  for (const p of raw.prov || []) {
+    const P = { lv: 1, key: 'P' + p.k, name: String(p.n || '').replace(/^\+\s*/, '').toUpperCase(), code: String(p.k), anak: [], parent: root };
+    for (const k of p.kab || []) {
+      const K = { lv: 2, key: `${P.key}.${k.k}`, name: String(k.n || '').toUpperCase(), code: String(k.k), anak: [], parent: P };
+      for (const c of k.kec || []) {
+        const C = { lv: 3, key: `${K.key}.${c.k}`, name: String(c.n || '').toUpperCase(), code: String(c.k), anak: [], parent: K };
+        for (const l of c.kel || []) {
+          C.anak.push({
+            lv: 4, key: `${C.key}.${l.k}`, name: String(l.n || '').toUpperCase(),
+            code: String(l.k), anak: [], parent: C
           });
         }
         K.anak.push(C);
@@ -125,972 +169,769 @@ function buildTree(raw) {
     }
     root.anak.push(P);
   }
-  // basis per kecamatan: agregat asli bila ada, selain itu imputasi berjenjang
-  const walk = n => { S.nodes.set(n.key, n); n.anak.forEach(walk); };
+  const walk = node => {
+    if (S.nodes.has(node.key)) throw new Error(`Kode wilayah ganda: ${node.key}`);
+    S.nodes.set(node.key, node);
+    node.anak.forEach(walk);
+  };
   walk(root);
-  const kecs = [...S.nodes.values()].filter(n => n.lv === 3);
-  for (const n of kecs) {
-    if (!n.anak.length) continue;
-    const b = { dpt: 0, guna: 0, sah: 0, tsah: 0, tps: 0, p19: 0, j19: 0 };
-    for (const k of n.anak) for (const f in b) b[f] += k.base[f];
-    n.base = b;
-  }
-  /* rata-rata nyata per kabupaten & provinsi — dipakai untuk mengimputasi wilayah
-     yang belum ter-scrape, agar pola geografisnya tidak seragam. */
-  const mean = new Map();
-  const collect = list => {
-    let s = 0, w = 0, dpt = 0, cnt = 0;
-    for (const k of list) if (k.base) { s += k.base.p19; w += k.base.sah; dpt += k.base.dpt; cnt++; }
-    return cnt ? { p: w ? s / w : null, dpt: dpt / cnt, cnt } : null;
-  };
-  for (const P of root.anak) {
-    const realKecP = [];
-    for (const K of P.anak) {
-      const rk = K.anak.filter(c => c.base);
-      const mk = collect(rk); if (mk) mean.set(K.key, mk);
-      realKecP.push(...rk);
-    }
-    const mp = collect(realKecP); if (mp) mean.set(P.key, mp);
-  }
-  let synthDpt = 0, realDpt = 0;
-  for (const n of kecs) {
-    if (n.base) { realDpt += n.base.dpt; continue; }
-    const K = n.parent, P = K.parent;
-    const rp = mulberry32(fnv('prov' + P.key)), rk = mulberry32(fnv('kab' + K.key)), rc = mulberry32(fnv('kec' + n.key));
-    const mp = mean.get(P.key), mk = mean.get(K.key);
-    const cl = x => Math.min(.93, Math.max(.07, x));
-    const provTilt = mp && mp.p != null ? mp.p : .20 + .62 * rp();
-    const kabTilt = mk && mk.p != null ? mk.p : cl(provTilt + (rk() * 2 - 1) * .13);
-    const pr = cl(kabTilt + (rc() * 2 - 1) * .09);
-    const scale = mp ? mp.dpt / 26000 : .55 + 1.15 * rp();
-    const dpt = Math.max(900, Math.round((2600 + Math.pow(rc(), 2.0) * 66000) * scale));
-    const guna = Math.round(dpt * (.68 + rc() * .22));
-    const tsah = Math.round(guna * (.008 + rc() * .028));
-    const sah = guna - tsah;
-    n.base = { dpt, guna, sah, tsah, tps: Math.max(1, Math.round(dpt / 290)), p19: Math.round(sah * pr), j19: sah - Math.round(sah * pr) };
-    n.sintetis = true; synthDpt += dpt;
-  }
-  /* skala wilayah imputasi agar DPT nasional mendekati DPT Pemilu 2024 (204,8 juta) */
-  const TARGET = 204807222, f = synthDpt > 0 ? Math.max(.3, (TARGET - realDpt) / synthDpt) : 1;
-  if (Math.abs(f - 1) > .01) for (const n of kecs) {
-    if (!n.sintetis) continue;
-    for (const k of ['dpt', 'guna', 'sah', 'tsah', 'tps', 'p19', 'j19']) n.base[k] = Math.round(n.base[k] * f);
-    n.base.tps = Math.max(1, n.base.tps);
-  }
-  // rollup basis ke atas
-  const roll = n => {
-    if (n.lv >= 3) return n.base;
-    const b = { dpt: 0, guna: 0, sah: 0, tsah: 0, tps: 0, p19: 0, j19: 0 };
-    for (const k of n.anak) { const kb = roll(k); for (const f in b) b[f] += kb[f]; }
-    n.base = b; return b;
-  };
-  roll(root);
   return root;
 }
 
-/* ── generator hasil ──────────────────────────────────────────────── */
-let PBAR = .45;
-function sharesFor(node, E) {
-  const r = mulberry32(fnv(E.id + '|' + node.key));
-  if (E.jenis === 'paslon') {
-    /* Struktur geografis diikat ke pola 2019 yang nyata: basis Prabowo 2019 kuat
-       berkorelasi dengan Anies 2024, basis Jokowi 2019 dengan Ganjar 2024. */
-    const p = Math.min(.96, Math.max(.04, node.base.sah ? node.base.p19 / node.base.sah : PBAR));
-    const a = PASLON[0].anchor * Math.pow(p / PBAR, 2.05) * (.86 + r() * .28);
-    const g = PASLON[2].anchor * Math.pow((1 - p) / (1 - PBAR), 1.30) * (.86 + r() * .28);
-    const pr = PASLON[1].anchor * (.90 + r() * .20);
-    const s = a + g + pr; return [a / s, pr / s, g / s];
-  }
-  const out = E.opsi.map(o => Math.max(o.anchor * Math.exp((r() * 2 - 1) * E.spread), o.anchor * .06));
-  const s = out.reduce((x, y) => x + y, 0);
-  return out.map(v => v / s);
-}
-function buildElection(id) {
-  if (S.res[id]) return S.res[id];
-  const E = PEMILU.find(e => e.id === id), m = new Map(), N = E.opsi.length;
-
-  if (id === 'pilpres') {
-    for (const n of S.nodes.values()) {
-      if (n.lv === 3) {
-        m.set(n.key, [n.base.j19 || 0, n.base.p19 || 0]);
-      }
-    }
-  } else if (id === 'dpr' && S.e2019 && S.e2019.dprri) {
-    for (const n of S.nodes.values()) {
-      if (n.lv === 3) {
-        const v = S.e2019.dprri[n.name] || S.e2019.dprri[norm(n.name)];
-        if (v && v.length === N && v.some(x => x > 0)) {
-          m.set(n.key, v);
-        } else {
-          const r = mulberry32(fnv('dpr' + n.key));
-          const sahs = n.base.sah || 1000;
-          const sh = E.opsi.map(o => o.anchor * (.75 + r() * .5));
-          const sum = sh.reduce((a, b) => a + b, 0) || 1;
-          m.set(n.key, sh.map(x => Math.round(x * sahs / sum)));
-        }
-      }
-    }
-  } else {
-    for (const n of S.nodes.values()) {
-      if (n.lv === 3) {
-        const r = mulberry32(fnv(id + n.key));
-        const sahs = n.base.sah || 1000;
-        const sh = E.opsi.map(o => o.anchor * (.7 + r() * .6));
-        const sum = sh.reduce((a, b) => a + b, 0) || 1;
-        m.set(n.key, sh.map(x => Math.round(x * sahs / sum)));
-      }
-    }
-  }
-
-  const up = n => {
-    if (n.lv === 3) return m.get(n.key) || new Array(N).fill(0);
-    const acc = new Array(N).fill(0);
-    for (const c of n.anak) { const cv = up(c); for (let i = 0; i < N; i++) acc[i] += (cv[i] || 0); }
-    m.set(n.key, acc); return acc;
+function emptyResult(E, total = 1) {
+  return {
+    votes: new Array(E.opsi.length).fill(0), stats: new Array(S.statNames.length).fill(0),
+    present: false, covered: 0, total
   };
-  up(S.root);
-  S.res[id] = m; return m;
 }
 
-function votesOf(node) {
-  if (S.pemilu === 'pilpres') {
-    return [node.base.j19 || 0, node.base.p19 || 0];
+function parseEntry(entry, E) {
+  if (!Array.isArray(entry) || !Array.isArray(entry[0])) return emptyResult(E);
+  const sourceVotes = entry[0];
+  const sourceStats = Array.isArray(entry[1]) ? entry[1] : [];
+  return {
+    votes: E.sourceIndexes.map(index => number(sourceVotes[index])),
+    stats: S.statNames.map((_, index) => number(sourceStats[index])),
+    present: true, covered: 1, total: 1
+  };
+}
+
+function combineResults(results, E) {
+  const out = emptyResult(E, 0);
+  for (const result of results) {
+    if (!result) continue;
+    out.covered += result.covered;
+    out.total += result.total;
+    if (!result.present) continue;
+    out.present = true;
+    result.votes.forEach((value, index) => { out.votes[index] += number(value); });
+    result.stats.forEach((value, index) => { out.stats[index] += number(value); });
   }
-  const m = buildElection(S.pemilu);
-  if (m.has(node.key)) return m.get(node.key);
-
-  const C = node.parent, cv = m.get(C.key), kids = C.anak, N = cv.length;
-  const totSah = kids.reduce((acc, k) => acc + (k.base.sah || 0), 0) || 1;
-  const out = kids.map(k => {
-    const ratio = (k.base.sah || 0) / totSah;
-    return cv.map(v => Math.round(v * ratio));
-  });
-  kids.forEach((k, j) => m.set(k.key, out[j]));
-  return m.get(node.key) || new Array(N).fill(0);
+  return out;
 }
-function sahOf(node) { return votesOf(node).reduce((a, b) => a + b, 0); }
 
-/* ── warna ────────────────────────────────────────────────────────── */
-function opsi() { return PEMILU.find(e => e.id === S.pemilu).opsi; }
-function winnerOf(n) { const v = votesOf(n); let b = 0; for (let i = 1; i < v.length; i++) if (v[i] > v[b]) b = i; return b; }
-function marginOf(n) {
-  const v = votesOf(n).slice().sort((a, b) => b - a), t = v.reduce((a, b) => a + b, 0) || 1;
-  return (v[0] - (v[1] || 0)) / t;
+function installElectionData(data) {
+  S.election = data;
+  S.sourceSummary = data.source_summary || null;
+  S.statNames = Array.isArray(data.stats) ? data.stats.slice() : [];
+  S.statIndex = new Map(S.statNames.map((name, index) => [name, index]));
+  PEMILU = normalizeContests(data.contests);
+  if (PEMILU.length !== 4) {
+    console.warn(`Diharapkan empat kontes 2019, ditemukan ${PEMILU.length}.`);
+  }
+  S.contestsById = new Map(PEMILU.map(contest => [contest.id, contest]));
+  S.results = new Map(PEMILU.map(contest => [contest.id, new Map()]));
+
+  const kecData = data.kec || {};
+  for (const E of PEMILU) {
+    const map = S.results.get(E.id);
+    for (const node of S.nodes.values()) {
+      if (node.lv !== 3) continue;
+      const row = kecData[node.key];
+      map.set(node.key, parseEntry(Array.isArray(row) ? row[E.sourceIndex] : null, E));
+    }
+    const roll = node => {
+      if (node.lv === 3) return map.get(node.key) || emptyResult(E);
+      const result = combineResults(node.anak.map(roll), E);
+      map.set(node.key, result);
+      return result;
+    };
+    roll(S.root);
+  }
+  S.pemilu = PEMILU[0] ? PEMILU[0].id : null;
 }
-const BGT = '#f3f2f2';
+
+function provinceOf(node) { while (node && node.lv > 1) node = node.parent; return node && node.lv === 1 ? node : null; }
+function ancestorAt(node, level) { while (node && node.lv > level) node = node.parent; return node && node.lv === level ? node : null; }
+function resultOf(node, contestId = S.pemilu) {
+  const E = S.contestsById.get(contestId);
+  const map = S.results.get(contestId);
+  return E && map && map.get(node.key) ? map.get(node.key) : (E ? emptyResult(E) : null);
+}
+function votesOf(node) { const result = resultOf(node); return result ? result.votes : []; }
+function sahOf(node) { const result = resultOf(node); return result && result.present ? result.votes.reduce((a, b) => a + b, 0) : null; }
+function statOf(nodeOrResult, name) {
+  const result = nodeOrResult && nodeOrResult.votes ? nodeOrResult : resultOf(nodeOrResult);
+  const index = S.statIndex.get(name);
+  return result && result.present && index != null ? number(result.stats[index]) : null;
+}
+
+async function loadLeafResults(P) {
+  if (!P) return;
+  if (S.leafLoads.has(P.key)) return S.leafLoads.get(P.key);
+  const promise = (async () => {
+    let chunk = null;
+    try {
+      const response = await fetch(`data/election2019/${encodeURIComponent(P.key)}.json`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      chunk = await response.json();
+      if (chunk.schema !== 2 || !chunk.leaf) throw new Error('skema chunk hasil desa tidak didukung');
+    } catch (error) {
+      S.leafErrors.set(P.key, error.message);
+      console.warn(`Hasil desa ${P.key} gagal dimuat`, error);
+      chunk = { leaf: {} };
+    }
+    for (const K of P.anak) for (const C of K.anak) for (const L of C.anak) {
+      const row = chunk.leaf[L.key];
+      for (const E of PEMILU) {
+        S.results.get(E.id).set(L.key, parseEntry(Array.isArray(row) ? row[E.sourceIndex] : null, E));
+      }
+    }
+  })();
+  S.leafLoads.set(P.key, promise);
+  return promise;
+}
+
+/* ── warna dan skala ─────────────────────────────────────────────── */
+function election() { return S.contestsById.get(S.pemilu); }
+function opsi() { const E = election(); return E ? E.opsi : []; }
+function leadersOf(node) {
+  const result = resultOf(node), votes = result ? result.votes : [];
+  const total = result && result.present ? votes.reduce((a, b) => a + b, 0) : 0;
+  if (total <= 0 || !votes.length) return [];
+  const maximum = Math.max(...votes);
+  return votes.map((value, index) => value === maximum ? index : -1).filter(index => index >= 0);
+}
+function winnerOf(node) { const leaders = leadersOf(node); return leaders.length === 1 ? leaders[0] : null; }
+function isTie(node) { return leadersOf(node).length > 1; }
+function marginOf(node) {
+  const result = resultOf(node);
+  if (!result || !result.present) return null;
+  const votes = result.votes.slice().sort((a, b) => b - a);
+  const total = votes.reduce((a, b) => a + b, 0);
+  return total > 0 ? (votes[0] - (votes[1] || 0)) / total : null;
+}
+function turnoutOf(node) {
+  const result = resultOf(node);
+  const validated = statOf(result, 'validated-tps');
+  const registered = statOf(result, 'total-pemilih');
+  const users = statOf(result, 'total-pengguna');
+  return result && result.present && validated > 0 && registered > 0 ? users / registered : null;
+}
 function activeUnits() {
-  if (S.sel.lv === 0) return S.root.anak;
-  if (S.sel.lv === 1) return S.sel.anak;
+  if (!S.sel) return [];
   return S.sel.anak.length ? S.sel.anak : [S.sel];
 }
 function updateScale() {
-  const u = activeUnits();
-  const t = u.map(n => n.base.dpt ? n.base.guna / n.base.dpt : 0).filter(x => x > 0);
-  S.tDom = t.length ? [d3.quantile(t.slice().sort(d3.ascending), .02), d3.quantile(t.slice().sort(d3.ascending), .98)] : [.55, .9];
-  if (S.tDom[1] - S.tDom[0] < .02) S.tDom = [S.tDom[0] - .01, S.tDom[1] + .01];
-  const sh = u.map(n => { const v = votesOf(n), s = v.reduce((a, b) => a + b, 0) || 1; return v[S.fokus] / s; });
-  S.sDom = [0, Math.max(.08, d3.max(sh) || .5)];
+  const units = activeUnits();
+  const turnouts = units.map(turnoutOf).filter(value => value != null && value >= 0);
+  S.tDom = turnouts.length
+    ? [d3.quantile(turnouts.slice().sort(d3.ascending), .02), d3.quantile(turnouts.slice().sort(d3.ascending), .98)]
+    : [.55, .9];
+  if (S.tDom[1] - S.tDom[0] < .02) S.tDom = [Math.max(0, S.tDom[0] - .01), S.tDom[1] + .01];
+  const shares = units.map(node => {
+    const total = sahOf(node), votes = votesOf(node);
+    return total > 0 ? votes[S.fokus] / total : null;
+  }).filter(value => value != null);
+  S.sDom = [0, Math.max(.08, d3.max(shares) || .5)];
 }
-function colorOf(n) {
+function colorOf(node) {
   const O = opsi();
   if (S.mode === 'turnout') {
-    const t = n.base.dpt ? n.base.guna / n.base.dpt : 0;
+    const turnout = turnoutOf(node);
+    if (turnout == null) return NO_DATA;
     const [a, b] = S.tDom || [.55, .9];
-    return d3.interpolateRgb('#f6f4f3', '#201e1d')(Math.min(1, Math.max(0, (t - a) / (b - a))));
+    return d3.interpolateRgb('#f6f4f3', '#201e1d')(Math.min(1, Math.max(0, (turnout - a) / (b - a))));
   }
+  const total = sahOf(node);
+  if (!(total > 0)) return NO_DATA;
   if (S.mode === 'share') {
-    const v = votesOf(n), t = v.reduce((a, b) => a + b, 0) || 1;
-    const m = (S.sDom || [0, .75])[1];
-    return d3.interpolateRgb(BGT, O[S.fokus].warna)(Math.min(1, (v[S.fokus] / t) / m));
+    const max = (S.sDom || [0, .75])[1];
+    return d3.interpolateRgb(BGT, O[S.fokus].warna)(Math.min(1, (votesOf(node)[S.fokus] / total) / max));
   }
-  const w = winnerOf(n), c = O[w].warna;
-  if (S.mode === 'winner') return c;
-  const t = Math.min(1, marginOf(n) / .5);
-  return d3.interpolateRgb(d3.interpolateRgb(BGT, c)(.22), c)(t);
+  const winner = winnerOf(node);
+  if (winner == null) return isTie(node) ? TIE_COLOR : NO_DATA;
+  const color = O[winner].warna;
+  if (S.mode === 'winner') return color;
+  return d3.interpolateRgb(d3.interpolateRgb(BGT, color)(.22), color)(Math.min(1, marginOf(node) / .5));
 }
 
-/* ── tabs ─────────────────────────────────────────────────────────── */
+/* ── kontrol kontes dan legenda ──────────────────────────────────── */
 function renderTabs() {
-  $('#tabs').innerHTML = PEMILU.map(e =>
-    `<button class="tab" role="tab" data-e="${e.id}" aria-selected="${e.id === S.pemilu}">
-      <span class="tk">${e.kicker}</span><span class="tn">${e.nama}</span></button>`).join('');
-  $('#tabs').querySelectorAll('.tab').forEach(b => b.onclick = () => {
-    S.pemilu = b.dataset.e; S.fokus = Math.min(S.fokus, opsi().length - 1); renderTabs(); renderAll();
+  $('#tabs').innerHTML = PEMILU.map(E =>
+    `<button class="tab" role="tab" data-e="${E.id}" aria-selected="${E.id === S.pemilu}">
+      <span class="tk">${esc(E.kicker)}</span><span class="tn">${esc(E.nama)}</span></button>`).join('');
+  $('#tabs').querySelectorAll('.tab').forEach(button => {
+    button.onclick = () => {
+      S.pemilu = button.dataset.e;
+      S.fokus = Math.min(S.fokus, Math.max(0, opsi().length - 1));
+      if (typeof S.sort.k === 'number' && S.sort.k >= opsi().length) {
+        S.sort = { k: 'v', d: -1 };
+      }
+      showAll = false;
+      renderTabs();
+      renderAll();
+    };
   });
 }
 function renderModes() {
   const modes = [['winner', 'Pemenang'], ['margin', 'Margin'], ['share', 'Perolehan'], ['turnout', 'Partisipasi']];
-  $('#modeseg').innerHTML = modes.map(([k, l]) =>
-    `<label class="seg-opt"><input type="radio" name="m" value="${k}" ${k === S.mode ? 'checked' : ''}>${l}</label>`).join('');
-  $('#modeseg').querySelectorAll('input').forEach(i => i.onchange = () => { S.mode = i.value; renderModes(); renderAll(); });
-  const sh = S.mode === 'share';
-  $('#focussel').hidden = !sh; $('#focuslab').hidden = !sh;
-  if (sh) {
-    $('#focussel').innerHTML = opsi().map((o, i) =>
-      `<option value="${i}" ${i === S.fokus ? 'selected' : ''}>${o.no}. ${o.pendek}</option>`).join('');
-    $('#focussel').onchange = e => { S.fokus = +e.target.value; renderAll(); };
+  $('#modeseg').innerHTML = modes.map(([key, label]) =>
+    `<label class="seg-opt"><input type="radio" name="m" value="${key}" ${key === S.mode ? 'checked' : ''}>${label}</label>`).join('');
+  $('#modeseg').querySelectorAll('input').forEach(input => {
+    input.onchange = () => { S.mode = input.value; renderModes(); renderAll(); };
+  });
+  const isShare = S.mode === 'share';
+  $('#focussel').hidden = !isShare;
+  $('#focuslab').hidden = !isShare;
+  if (isShare) {
+    $('#focussel').innerHTML = opsi().map((option, index) =>
+      `<option value="${index}" ${index === S.fokus ? 'selected' : ''}>${esc(option.no)}. ${esc(option.pendek)}</option>`).join('');
+    $('#focussel').onchange = event => { S.fokus = +event.target.value; renderAll(); };
   }
 }
 function renderLegend() {
-  const O = opsi(), L = $('#legend'), lvl = ANAK[S.sel.lv] || LEVELS[S.sel.lv];
+  const O = opsi(), legend = $('#legend'), level = ANAK[S.sel.lv] || LEVELS[S.sel.lv];
   if (S.mode === 'turnout') {
     const [a, b] = S.tDom || [.55, .9];
-    L.innerHTML = `<span class="modelab">Partisipasi per ${lvl.toLowerCase()}</span><span>${pct(a, 0)}</span>
-      <span class="ramp">${d3.range(9).map(i => `<i style="background:${d3.interpolateRgb('#f6f4f3', '#201e1d')(i / 8)}"></i>`).join('')}</span><span>${pct(b, 0)}</span>`;
+    legend.innerHTML = `<span class="modelab">Partisipasi tervalidasi per ${esc(level.toLowerCase())}</span><span>${pct(a, 0)}</span>
+      <span class="ramp">${d3.range(9).map(i => `<i style="background:${d3.interpolateRgb('#f6f4f3', '#201e1d')(i / 8)}"></i>`).join('')}</span><span>${pct(b, 0)}</span>
+      <span class="lgi"><i class="sw" style="background:${NO_DATA}"></i>Tanpa metadata valid</span>`;
     return;
   }
   if (S.mode === 'share') {
-    const c = O[S.fokus].warna, m = (S.sDom || [0, .75])[1];
-    L.innerHTML = `<span class="modelab">${O[S.fokus].no}. ${O[S.fokus].pendek}</span><span>0%</span>
-      <span class="ramp">${d3.range(9).map(i => `<i style="background:${d3.interpolateRgb(BGT, c)(i / 8)}"></i>`).join('')}</span><span>${pct(m, 0)}</span>`;
+    const option = O[S.fokus], max = (S.sDom || [0, .75])[1];
+    legend.innerHTML = `<span class="modelab">Perolehan ${esc(option.pendek)}</span><span>0%</span>
+      <span class="ramp">${d3.range(9).map(i => `<i style="background:${d3.interpolateRgb(BGT, option.warna)(i / 8)}"></i>`).join('')}</span><span>${pct(max, 0)}</span>
+      <span class="lgi"><i class="sw" style="background:${NO_DATA}"></i>Tanpa perolehan</span>`;
     return;
   }
-  const top = S.pemilu === 'pilpres' ? O : O.slice().sort((a, b) => b.anchor - a.anchor).slice(0, 9);
-  L.innerHTML = top.map(o => `<span class="lgi"><span class="sw" style="background:${o.warna}"></span>${o.no}. ${o.pendek}</span>`).join('')
-    + (S.mode === 'margin' ? `<span class="lgi" style="margin-left:auto"><span class="modelab">Terang = margin tipis</span></span>` : '');
+  legend.innerHTML = `<span class="modelab">${S.mode === 'winner' ? 'Pemenang' : 'Pemenang · intensitas = margin'}</span>` +
+    O.map(option => `<span class="lgi"><i class="sw" style="background:${option.warna}"></i>${esc(option.no)} ${esc(option.pendek)}</span>`).join('') +
+    `<span class="lgi"><i class="sw" style="background:${TIE_COLOR}"></i>Seri</span>` +
+    `<span class="lgi"><i class="sw" style="background:${NO_DATA}"></i>Tanpa perolehan</span>`;
 }
 
-/* ── peta geografis ───────────────────────────────────────────────── */
-let projection, path, zoom, svg, gLayer, gProv, gKab, gKec, gDesa, dims = [0, 0];
-S.geoKec = {};
-S.geoDesa = {};
-
+/* ── GeoJSON lokal berbasis properties.key ───────────────────────── */
+let projection, path, zoom, svg, gLayer, gRegions, dims = [0, 0];
 function initMap() {
-  svg = d3.select('#map'); svg.selectAll('*').remove();
+  svg = d3.select('#map');
+  svg.selectAll('*').remove();
   gLayer = svg.append('g');
-  gProv = gLayer.append('g'); gKab = gLayer.append('g');
-  gKec = gLayer.append('g'); gDesa = gLayer.append('g');
-  zoom = d3.zoom().scaleExtent([1, 260]).on('zoom', ev => gLayer.attr('transform', ev.transform));
+  gRegions = gLayer.append('g');
+  zoom = d3.zoom().scaleExtent([1, 260]).on('zoom', event => {
+    // Gestur pengguna membatalkan animasi drill-down agar keduanya tidak
+    // sama-sama menulis transform gLayer.
+    if (event.sourceEvent) gLayer.interrupt();
+    gLayer.attr('transform', event.transform);
+  });
   svg.call(zoom).on('dblclick.zoom', null);
-  $('#zin').onclick = () => svg.transition().duration(300).call(zoom.scaleBy, 1.7);
-  $('#zout').onclick = () => svg.transition().duration(300).call(zoom.scaleBy, 1 / 1.7);
+  $('#zin').onclick = () => { gLayer.interrupt(); svg.transition().duration(300).call(zoom.scaleBy, 1.7); };
+  $('#zout').onclick = () => { gLayer.interrupt(); svg.transition().duration(300).call(zoom.scaleBy, 1 / 1.7); };
   $('#zrst').onclick = () => select(S.root);
 }
+/* Animasi pindah tingkat: tampilan baru dimulai pada kerangka tampilan
+   sebelumnya lalu dianimasikan ke identitas, sehingga drill-down terlihat
+   sebagai zoom in dan naik tingkat sebagai zoom out.  Transform dipasang
+   langsung pada gLayer supaya scaleExtent zoom interaktif tetap [1, 260]. */
+const VIEW_ZOOM_MS = 700;
+function viewportTransform(collection) {
+  if (!collection || !path) return null;
+  const [[x0, y0], [x1, y1]] = path.bounds(collection);
+  const [width, height] = dims;
+  // Koleksi tanpa geometri terpakai memberi bounds tak-hingga; clamp di bawah
+  // akan menyembunyikannya menjadi k yang finite dengan translate NaN.
+  if (![x0, y0, x1, y1].every(Number.isFinite)) return null;
+  const spanX = x1 - x0, spanY = y1 - y0;
+  if (!(spanX > 0) || !(spanY > 0)) return null;
+  const k = Math.max(0.02, Math.min(50, Math.min(width / spanX, height / spanY)));
+  return d3.zoomIdentity
+    .translate(width / 2, height / 2)
+    .scale(k)
+    .translate(-(x0 + x1) / 2, -(y0 + y1) / 2);
+}
+/* Identitas tampilan mengikuti koleksi yang benar-benar digambar, bukan node
+   terpilih: memilih satu desa di dalam kecamatan yang sama tidak mengganti
+   peta, jadi pan/zoom pengguna tidak boleh direset. */
+function viewIdentity(node) {
+  if (node.lv === 0) return { id: 'prov', key: 'ID' };
+  if (node.lv === 1) return { id: `kab:${node.key}`, key: node.key };
+  if (node.lv === 2) return { id: `kec:${node.key}`, key: node.key };
+  const district = ancestorAt(node, 3);
+  return { id: `desa:${district.key}`, key: district.key };
+}
+// Animasi hanya untuk perpindahan naik/turun pada cabang yang sama.  Lompatan
+// ke wilayah lain (misalnya lewat pencarian) tidak punya hubungan spasial.
+function relatedViews(from, to) {
+  if (!from || !to) return false;
+  if (from === to || from === 'ID' || to === 'ID') return true;
+  return from.startsWith(to + '.') || to.startsWith(from + '.');
+}
+function enterView(previousCollection) {
+  svg.interrupt();
+  gLayer.interrupt();
+  svg.call(zoom.transform, d3.zoomIdentity);
+  const start = viewportTransform(previousCollection);
+  if (!start) { gLayer.attr('transform', null); return; }
+  gLayer.attr('transform', start.toString())
+    .transition().duration(VIEW_ZOOM_MS).ease(d3.easeCubicOut)
+    .attr('transform', d3.zoomIdentity.toString());
+}
+function featureNode(feature) {
+  const key = feature && feature.properties && feature.properties.key;
+  return key == null ? null : S.nodes.get(String(key)) || null;
+}
 function fitProjection(featureCollection) {
-  const el = $('#viewport'), w = el.clientWidth || 800, h = el.clientHeight || 500;
-  dims = [w, h];
-  svg.attr('viewBox', `0 0 ${w} ${h}`);
-  const fc = featureCollection || S.geoProv;
-  if (!fc) return;
-  projection = d3.geoMercator().fitExtent([[12, 12], [w - 12, h - 12]], fc);
+  const el = $('#viewport'), width = el.clientWidth || 800, height = el.clientHeight || 500;
+  dims = [width, height];
+  svg.attr('viewBox', `0 0 ${width} ${height}`);
+  projection = d3.geoMercator().fitExtent([[12, 12], [width - 12, height - 12]], featureCollection);
   path = d3.geoPath(projection);
 }
-function provNodeFor(feature) {
-  const vals = Object.values(feature.properties || {}).filter(v => typeof v === 'string');
-  for (const v of vals) { const n = S.provByNorm.get(norm(v)); if (n) return n; }
-  return null;
-}
-const stripKab = s => norm(s).replace(/^(KABUPATEN|KAB|KOTA ADMINISTRASI|KOTA ADM|KOTA)\s+/, '').trim();
-const tight = s => stripKab(s).replace(/\s+/g, '');
-const compact = s => norm(s).replace(/\s+/g, '');
-const normKec = s => norm(s).replace(/^(KECAMATAN|KEC)\s+/, '').trim();
-const compactKec = s => normKec(s).replace(/\s+/g, '');
-
-/* Koreksi atribut yang memang salah/bernama lama pada indonesia-atlas. ID BPS
-   tetap stabil, sehingga alias ini tidak bergantung pada urutan fitur. */
-const KAB_GEO_ALIASES = {
-  '12-77': 'KOTA PADANG SIDEMPUAN',
-  '61-71': 'KOTA PONTIANAK',
-  '71-08': 'KEPULAUAN SIAU TAGULANDANG BIARO',
-  '75-03': 'PAHUWATO',
-  '76-05': 'PASANGKAYU',
-  '91-12': 'PEGUNUNGAN ARFAK'
-};
-
-function kabFeatureId(feature) {
-  const m = String(feature && feature.id != null ? feature.id : '').match(/^(\d{2})-(\d{2})$/);
-  return m ? `${m[1]}-${m[2]}` : '';
-}
-function kabFeatureCode(feature) {
-  const id = kabFeatureId(feature);
-  return id ? id.replace('-', '') : '';
-}
-function kabFeatureType(feature) {
-  const id = kabFeatureId(feature);
-  if (!id) return '';
-  const code = Number(id.slice(-2));
-  if (code >= 1 && code <= 69) return 'kab';
-  if (code >= 71 && code <= 79) return 'kota';
-  return 'other'; // danau, waduk, hutan, dan fitur non-administratif lain
-}
-function kabNodeType(node) {
-  const name = norm(node.name);
-  if (/^KOTA(?:\s+ADMINISTRASI)?\s+/.test(name)) return 'kota';
-  // Dataset KPU menulis lima kota administrasi DKI tanpa awalan KOTA.
-  if (norm(node.parent && node.parent.name || '') === 'JAKARTA' && /^JAKARTA\s+/.test(name)) return 'kota';
-  return 'kab';
-}
-function kabFeatureName(feature) {
-  const p = feature && feature.properties || {};
-  return p.kabkot || p.kabupaten_kota || p.kabupaten || p.kota || p.name || p.nama || '';
-}
-function kabFeatureBase(feature) {
-  let name = norm(kabFeatureName(feature));
-  const type = kabFeatureType(feature);
-  if (type === 'kota') name = name.replace(/^(KOTA ADMINISTRASI|KOTA ADM|KOTA)\s+/, '');
-  if (type === 'kab') name = name.replace(/^(KABUPATEN|KAB)\s+/, '');
-  return name.trim();
-}
-function kabNodeFor(feature, P) {
-  if (!feature || !P) return null;
-  const type = kabFeatureType(feature);
-  if (type === 'other') return null;
-
-  const alias = KAB_GEO_ALIASES[kabFeatureId(feature)];
-  if (alias) {
-    const hit = P.anak.find(node => norm(node.name) === norm(alias));
-    if (hit) return hit;
-  }
-
-  const base = kabFeatureBase(feature);
-  if (!base) return null;
-  const pool = type ? P.anak.filter(node => kabNodeType(node) === type) : P.anak;
-  let hits = pool.filter(node => stripKab(node.name) === base);
-  if (hits.length === 1) return hits[0];
-
-  const key = base.replace(/\s+/g, '');
-  hits = pool.filter(node => tight(node.name) === key);
-  if (hits.length === 1) return hits[0];
-
-  return null;
-}
-
-function bindKabGeoCodes(P, featureCollection) {
-  P.anak.forEach(node => { node.geoCodes = []; });
-  for (const feature of featureCollection.features || []) {
-    const node = kabNodeFor(feature, P), code = kabFeatureCode(feature);
-    if (node && code && !node.geoCodes.includes(code)) node.geoCodes.push(code);
-  }
-}
-
-function kecIndexKey(kabNode) {
-  return `${norm(kabNode.parent.name)}|${norm(kabNode.name)}`;
-}
-function kecCodeCandidates(kabNode) {
-  const candidates = [];
-  if (S.kecIndex) {
-    // Crosswalk shapefile didahulukan karena kode kabupaten pada SHP lama dapat
-    // berbeda dari ID BPS atlas modern (contoh Bandung: 3206 vs 32-04).
-    candidates.push(S.kecIndex[kecIndexKey(kabNode)]);
-    // Kompatibilitas untuk indeks lama; indeks baru selalu province-aware.
-    candidates.push(S.kecIndex[stripKab(kabNode.name)]);
-  }
-  candidates.push(...(kabNode.geoCodes || []));
-  return [...new Set(candidates.filter(Boolean).map(code => String(code).replace(/\D/g, '').padStart(4, '0'))
-    .filter(code => /^\d{4}$/.test(code)))];
-}
-
-async function loadKecGIS(kabNode) {
-  if (!kabNode) return null;
-  const key = kabNode.key;
-  if (S.geoKec[key] !== undefined) return S.geoKec[key];
-
-  // Evaluasi semua kandidat. ID atlas modern dan kode pada shapefile lama tidak
-  // selalu identik, jadi kandidat dengan cakupan child kecamatan terbesar yang
-  // dipakai, bukan file pertama yang kebetulan ditemukan.
-  const bpsCodes = kecCodeCandidates(kabNode);
-  let best = null;
-  for (const bpsCode of bpsCodes) {
+async function loadGeoChunk(cache, key, folder) {
+  if (cache.has(key)) return cache.get(key);
+  const pending = (async () => {
     try {
-      const res = await fetch(`data/gis/kec/${encodeURIComponent(bpsCode)}.json`);
-      if (res.ok) {
-        const data = await res.json();
-        const features = (data.features || []).filter(feature => kecNodeFor(feature, kabNode));
-        const covered = new Set(features.map(feature => kecNodeFor(feature, kabNode).key)).size;
-        if (covered && (!best || covered > best.covered)) {
-          best = { covered, data: { type: 'FeatureCollection', features } };
-        }
-      }
-    } catch (e) {}
-  }
-  if (best) {
-    bindKecGeoNames(kabNode, best.data.features);
-    S.geoKec[key] = best.data;
-    return best.data;
-  }
-
-  // Fallback file bernama kecamatan hanya aman bila kode kabupaten fitur cocok;
-  // nama kecamatan yang sama banyak ditemukan di kabupaten/provinsi lain.
-  if (!bpsCodes.length) { S.geoKec[key] = null; return null; }
-  const acceptedCodes = new Set(bpsCodes);
-  const allFeatures = [];
-  const fetches = kabNode.anak.map(async (child) => {
-    const kecName = norm(child.name).replace(/[^A-Z0-9_\-\s]/g, '').trim();
-    try {
-      const res = await fetch(`data/gis/kec/${encodeURIComponent(kecName)}.json`);
-      if (res.ok) {
-        const j = await res.json();
-        if (j.features) allFeatures.push(...j.features.filter(feature => {
-          const code = String(feature.properties && feature.properties.kode_kab || '').replace(/\D/g, '').padStart(4, '0');
-          return acceptedCodes.has(code) && kecNodeFor(feature, kabNode);
-        }));
-      }
-    } catch (e) {}
-  });
-  await Promise.all(fetches);
-  if (allFeatures.length > 0) {
-    bindKecGeoNames(kabNode, allFeatures);
-    S.geoKec[key] = { type: 'FeatureCollection', features: allFeatures };
-    return S.geoKec[key];
-  }
-  S.geoKec[key] = null;
-  return null;
+      const response = await fetch(`data/gis/${folder}/${encodeURIComponent(key)}.json`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      return data && data.type === 'FeatureCollection' ? data : null;
+    } catch (error) {
+      console.warn(`GeoJSON ${folder}/${key} gagal dimuat`, error);
+      return null;
+    }
+  })();
+  cache.set(key, pending);
+  const data = await pending;
+  cache.set(key, data);
+  return data;
 }
+const loadKab = P => P ? loadGeoChunk(S.geoKab, P.key, 'kab') : null;
+const loadKecGIS = K => K ? loadGeoChunk(S.geoKec, K.key, 'kec') : null;
+const loadDesaGIS = C => C ? loadGeoChunk(S.geoDesa, C.key, 'desa') : null;
 
-async function loadDesaGIS(kecNode) {
-  if (!kecNode) return null;
-  const key = kecNode.key;
-  if (S.geoDesa[key] !== undefined) return S.geoDesa[key];
-
-  const kabNode = kecNode.parent;
-  const kabNames = kabNode ? desaKabLabels(kabNode) : [];
-  const kecNames = desaKecLabels(kecNode);
-
-  const candidates = [];
-  for (const kabName of kabNames) for (const kecName of kecNames) candidates.push(`${kabName}_${kecName}`);
-  candidates.push(...kecNames);
-
-  for (const c of [...new Set(candidates)]) {
-    try {
-      const res = await fetch(`data/gis/desa/${encodeURIComponent(c)}.json`);
-      if (res.ok) {
-        const data = await res.json();
-        const features = (data.features || []).filter(feature => {
-          const p = feature.properties || {};
-          return p.kab && p.kec && sameKabLabel(p.kab, kabNode) && sameKecLabel(p.kec, kecNode);
-        });
-        if (features.length) {
-          S.geoDesa[key] = { type: 'FeatureCollection', features };
-          return S.geoDesa[key];
-        }
-      }
-    } catch (e) {}
-  }
-  S.geoDesa[key] = null;
-  return null;
+async function geoForSelection(node) {
+  if (node.lv === 0) return S.geoProv;
+  if (node.lv === 1) return loadKab(node);
+  if (node.lv === 2) return loadKecGIS(node);
+  return loadDesaGIS(ancestorAt(node, 3));
 }
-
-const KEC_GEO_ALIASES = {
-  'YOGYAKARTA|BANTUL|PLERED': 'PLERET',
-  'YOGYAKARTA|SLEMAN|GODEYAN': 'GODEAN'
-};
-function kecGeoAliasKey(kabNode, sourceName) {
-  return `${norm(kabNode.parent.name)}|${norm(kabNode.name)}|${normKec(sourceName)}`;
+async function prepareSelection(node) {
+  const tasks = [];
+  const P = provinceOf(node);
+  if (node.lv >= 3) tasks.push(loadLeafResults(P));
+  if (node.lv === 1) tasks.push(loadKab(node));
+  if (node.lv === 2) tasks.push(loadKecGIS(node), loadKab(P));
+  if (node.lv >= 3) tasks.push(loadDesaGIS(ancestorAt(node, 3)), loadKab(P));
+  await Promise.all(tasks);
 }
-function kecNodeFor(feature, kabNode) {
-  const fName = normKec(feature.properties.name || '');
-  if (!fName || !kabNode) return null;
-  let hits = kabNode.anak.filter(child => normKec(child.name) === fName);
-  if (hits.length === 1) return hits[0];
-  const key = compactKec(fName);
-  hits = kabNode.anak.filter(child => compactKec(child.name) === key);
-  if (hits.length === 1) return hits[0];
-
-  const alias = KEC_GEO_ALIASES[kecGeoAliasKey(kabNode, fName)];
-  if (alias) {
-    const hit = kabNode.anak.find(child => normKec(child.name) === normKec(alias));
-    if (hit) return hit;
-  }
-  return null;
-}
-
-function bindKecGeoNames(kabNode, features) {
-  kabNode.anak.forEach(child => { child.geoNames = []; });
-  for (const feature of features) {
-    const child = kecNodeFor(feature, kabNode);
-    const sourceName = norm(feature.properties && feature.properties.name || '');
-    if (child && sourceName && !child.geoNames.includes(sourceName)) child.geoNames.push(sourceName);
-  }
-}
-
-const DESA_KAB_LABEL_ALIASES = {
-  'YOGYAKARTA|KOTA YOGYAKARTA': ['KDY YOGYAKART']
-};
-function desaKabLabels(kabNode) {
-  const key = `${norm(kabNode.parent.name)}|${norm(kabNode.name)}`;
-  return [...new Set([norm(kabNode.name), ...(DESA_KAB_LABEL_ALIASES[key] || []).map(norm)])];
-}
-function desaKecLabels(kecNode) {
-  return [...new Set([norm(kecNode.name), ...(kecNode.geoNames || []).map(norm)])];
-}
-function sameKabLabel(sourceName, kabNode) {
-  const source = compact(sourceName);
-  return desaKabLabels(kabNode).some(label => compact(label) === source);
-}
-function sameKecLabel(sourceName, kecNode) {
-  const source = compactKec(sourceName);
-  return desaKecLabels(kecNode).some(label => compactKec(label) === source);
-}
-
-function desaNodeFor(feature, kecNode) {
-  const fName = norm(feature.properties.name || '');
-  if (!fName || !kecNode) return null;
-  let hits = kecNode.anak.filter(child => norm(child.name) === fName);
-  if (hits.length === 1) return hits[0];
-  const key = compact(fName);
-  hits = kecNode.anak.filter(child => compact(child.name) === key);
-  if (hits.length === 1) return hits[0];
-  return null;
-}
-
 async function drawGeo() {
-  if (!S.geoProv) return;
-  const lv = S.sel.lv;
   const selectedKey = S.sel.key;
-
-  if (lv <= 1) {
-    gKec.selectAll('path').remove();
-    gDesa.selectAll('path').remove();
-    const anc = lv === 1 ? S.sel : null;
-    
-    fitProjection(S.geoProv);
-    gProv.selectAll('path').data(S.geoProv.features).join('path')
-      .attr('class', d => {
-        const n = provNodeFor(d);
-        return 'region' + (anc && n && n.key === anc.key ? ' sel' : (anc && n ? ' dim' : ''));
-      })
-      .attr('d', path)
-      .attr('fill', d => { const n = provNodeFor(d); return n ? colorOf(n) : '#d7d3d3'; })
-      .attr('opacity', anc ? .55 : 1)
-      .style('pointer-events', anc ? 'none' : 'auto')
-      .on('click', (e, d) => { const n = provNodeFor(d); if (n) select(n); })
-      .on('mousemove', (e, d) => { const n = provNodeFor(d); if (n) tipShow(e, n); })
-      .on('mouseleave', tipHide);
-
-    const kabFC = anc && S.geoKab[anc.key];
-    if (kabFC) {
-      gKab.selectAll('path').data(kabFC.features).join('path')
-        .attr('class', d => { const n = kabNodeFor(d, anc); return 'region' + (n && S.sel.lv >= 2 && ancestorAt(S.sel, 2) && ancestorAt(S.sel, 2).key === n.key ? ' sel' : ''); })
-        .attr('d', path)
-        .attr('fill', d => { const n = kabNodeFor(d, anc); return n ? colorOf(n) : '#c9c5c5'; })
-        .style('pointer-events', 'auto')
-        .on('click', (e, d) => { const n = kabNodeFor(d, anc); if (n) select(n); })
-        .on('mousemove', (e, d) => { const n = kabNodeFor(d, anc); if (n) tipShow(e, n); else tipHide(); })
-        .on('mouseleave', tipHide);
-    } else gKab.selectAll('path').remove();
-    return;
+  const collection = await geoForSelection(S.sel);
+  if (S.sel.key !== selectedKey) return false;
+  if (!collection || !Array.isArray(collection.features) || !collection.features.length) {
+    gRegions.selectAll('path').remove();
+    // Tampilan grid memutus rangkaian peta; frame berikutnya mulai bersih.
+    S.mapViewKey = null;
+    S.mapViewNodeKey = null;
+    S.mapCollection = null;
+    return false;
   }
-
-  if (lv === 2) {
-    gProv.selectAll('path').remove();
-    gKab.selectAll('path').remove();
-    gKec.selectAll('path').remove();
-    gDesa.selectAll('path').remove();
-
-    const kabNode = S.sel;
-    const kecFC = await loadKecGIS(kabNode);
-    if (S.sel.key !== selectedKey) return;
-
-    if (kecFC && kecFC.features && kecFC.features.length > 0) {
-      fitProjection(kecFC);
-      svg.call(zoom.transform, d3.zoomIdentity);
-
-      gKec.selectAll('path').data(kecFC.features).join('path')
-        .attr('class', d => {
-          const n = kecNodeFor(d, kabNode);
-          return 'region';
-        })
-        .attr('d', path)
-        .attr('fill', d => {
-          const n = kecNodeFor(d, kabNode);
-          return n ? colorOf(n) : '#d7d3d3';
-        })
-        .style('pointer-events', 'auto')
-        .on('click', (e, d) => {
-          const n = kecNodeFor(d, kabNode);
-          if (n) select(n);
-        })
-        .on('mousemove', (e, d) => {
-          const n = kecNodeFor(d, kabNode);
-          if (n) tipShow(e, n); else tipHide();
-        })
-        .on('mouseleave', tipHide);
-      return;
-    } else {
-      const P = kabNode.parent;
-      const kabFC = P && S.geoKab[P.key];
-      if (kabFC) {
-        fitProjection(kabFC);
-        gKab.selectAll('path').data(kabFC.features).join('path')
-          .attr('class', d => { const n = kabNodeFor(d, P); return 'region' + (n && n.key === kabNode.key ? ' sel' : ' dim'); })
-          .attr('d', path)
-          .attr('fill', d => { const n = kabNodeFor(d, P); return n ? colorOf(n) : '#c9c5c5'; })
-          .style('pointer-events', 'auto')
-          .on('click', (e, d) => { const n = kabNodeFor(d, P); if (n) select(n); })
-          .on('mousemove', (e, d) => { const n = kabNodeFor(d, P); if (n) tipShow(e, n); else tipHide(); })
-          .on('mouseleave', tipHide);
-      }
-    }
+  const previousCollection = S.mapCollection, previousNodeKey = S.mapViewNodeKey;
+  fitProjection(collection);
+  const view = viewIdentity(S.sel);
+  if (S.mapViewKey !== view.id) {
+    S.mapViewKey = view.id;
+    S.mapViewNodeKey = view.key;
+    S.mapCollection = collection;
+    enterView(relatedViews(previousNodeKey, view.key) ? previousCollection : null);
   }
-
-  if (lv >= 3) {
-    gProv.selectAll('path').remove();
-    gKab.selectAll('path').remove();
-    gKec.selectAll('path').remove();
-    gDesa.selectAll('path').remove();
-
-    const kecNode = ancestorAt(S.sel, 3);
-    const desaFC = await loadDesaGIS(kecNode);
-    if (S.sel.key !== selectedKey) return;
-
-    if (desaFC && desaFC.features && desaFC.features.length > 0) {
-      fitProjection(desaFC);
-      svg.call(zoom.transform, d3.zoomIdentity);
-
-      gDesa.selectAll('path').data(desaFC.features).join('path')
-        .attr('class', d => {
-          const n = desaNodeFor(d, kecNode);
-          const isSel = n && S.sel.key === n.key;
-          return 'region' + (isSel ? ' sel' : '');
-        })
-        .attr('d', path)
-        .attr('fill', d => {
-          const n = desaNodeFor(d, kecNode);
-          return n ? colorOf(n) : '#d7d3d3';
-        })
-        .style('pointer-events', 'auto')
-        .on('click', (e, d) => {
-          const n = desaNodeFor(d, kecNode);
-          if (n) select(n);
-        })
-        .on('mousemove', (e, d) => {
-          const n = desaNodeFor(d, kecNode);
-          if (n) tipShow(e, n); else tipHide();
-        })
-        .on('mouseleave', tipHide);
-      return;
-    }
-  }
-}
-function zoomToFeature(feature, dur = 700) {
-  if (!feature) { svg.transition().duration(dur).call(zoom.transform, d3.zoomIdentity); return; }
-  const [[x0, y0], [x1, y1]] = path.bounds(feature);
-  const [w, h] = dims;
-  const k = Math.min(40, .82 / Math.max((x1 - x0) / w, (y1 - y0) / h));
-  const t = d3.zoomIdentity.translate(w / 2, h / 2).scale(k).translate(-(x0 + x1) / 2, -(y0 + y1) / 2);
-  svg.transition().duration(dur).call(zoom.transform, t);
-}
-function featureOfProv(node) { return S.geoProv.features.find(f => { const n = provNodeFor(f); return n && n.key === node.key; }); }
-function featureOfKab(node) {
-  const P = node.parent, fc = S.geoKab[P.key]; if (!fc) return null;
-  return fc.features.find(f => { const n = kabNodeFor(f, P); return n && n.key === node.key; });
-}
-async function loadKab(P) {
-  if (S.geoKab[P.key] !== undefined) return S.geoKab[P.key];
-  const folder = ATLAS[P.name]; if (!folder) { S.geoKab[P.key] = null; return null; }
-  try {
-    const url = GH + 'kabupaten-kota/' + encodeURIComponent(folder) + '/' + slug(folder) + '-simplified-topo.json';
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const topo = await response.json();
-    const key = Object.keys(topo.objects)[0];
-    const fc = topojson.feature(topo, topo.objects[key]);
-
-    for (const extra of ATLAS_EXTRAS[folder] || []) {
-      try {
-        const extraResponse = await fetch(GH + 'kabupaten-kota/' + encodeURIComponent(folder) + '/' + extra);
-        if (!extraResponse.ok) continue;
-        const extraTopo = await extraResponse.json();
-        const extraKey = Object.keys(extraTopo.objects)[0];
-        const extraFC = topojson.feature(extraTopo, extraTopo.objects[extraKey]);
-        fc.features.push(...extraFC.features);
-      } catch (e) { console.warn('gagal memuat geometri tambahan', folder, extra, e); }
-    }
-
-    bindKabGeoCodes(P, fc);
-    S.geoKab[P.key] = fc;
-  } catch (e) { console.warn('gagal memuat geometri', P.name, e); S.geoKab[P.key] = null; }
-  return S.geoKab[P.key];
-}
-
-/* ── grid kartogram (kecamatan & kelurahan) ───────────────────────── */
-function renderGrid() {
-  const wrap = $('#gridwrap'), n = S.sel, kids = n.anak;
-  const O = opsi();
-  if (!kids.length) {
-    wrap.innerHTML = `<div class="gridhead"><h4>${n.name}</h4></div>
-      <p class="note">Tidak ada wilayah di bawah tingkat ini pada dataset. Untuk kecamatan tanpa rincian desa,
-      jalankan ulang scraper KPU pada wilayah tersebut lalu tambahkan hasilnya ke <code>data/wilayah.json</code>.</p>`;
-    return;
-  }
-  const rows = kids.map(k => ({ k, v: votesOf(k), s: sahOf(k) }));
-  rows.sort((a, b) => S.sort.d * ((S.sort.k === 'n' ? (a.k.name > b.k.name ? 1 : -1) : a.s - b.s)));
-  wrap.innerHTML = `<div class="gridhead"><h4>${ANAK[n.lv]} di ${n.name}</h4>
-      <span class="note">${kids.length} wilayah · klik untuk memperdalam${n.lv === 2 ? ' · geometri kecamatan tidak tersedia, ditampilkan sebagai grid' : ''}</span></div>
-    <div class="cellgrid">${rows.map(({ k, v, s }) => {
-    const w = winnerOf(k), t = s || 1;
-    const nodata = k.lv === 3 && !k.anak.length;
-    return `<button class="cell${nodata ? ' nodata' : ''}" data-k="${k.key}">
-        <div class="cn">${k.name}</div>
-        <div style="display:flex;align-items:baseline;gap:6px">
-          <span class="cpct" style="color:${O[w].warna}">${pct(v[w] / t, 0)}</span>
-          <span class="cw">${O[w].no} ${O[w].pendek}</span></div>
-        <div class="cbar">${v.map((x, i) => x / t > .008 ? `<i style="flex:${x};background:${O[i].warna}"></i>` : '').join('')}</div>
-        <div class="cw">${fmt(s)} suara sah${nodata ? ' · tanpa rincian desa' : ''}</div>
-      </button>`;
-  }).join('')}</div>`;
-  wrap.querySelectorAll('.cell').forEach(b => {
-    const node = S.nodes.get(b.dataset.k);
-    b.onclick = () => select(node);
-    b.onmousemove = e => tipShow(e, node);
-    b.onmouseleave = tipHide;
-  });
+  gRegions.selectAll('path').data(collection.features).join('path')
+    .attr('class', feature => {
+      const node = featureNode(feature);
+      return 'region' + (node && node.key === S.sel.key ? ' sel' : '');
+    })
+    .attr('d', path)
+    .attr('fill', feature => { const node = featureNode(feature); return node ? colorOf(node) : NO_DATA; })
+    .style('pointer-events', feature => featureNode(feature) ? 'auto' : 'none')
+    .on('click', (event, feature) => { const node = featureNode(feature); if (node) select(node); })
+    .on('mousemove', (event, feature) => { const node = featureNode(feature); if (node) tipShow(event, node); })
+    .on('mouseleave', tipHide);
+  return true;
 }
 function renderLocator() {
-  const anc = ancestorAt(S.sel, 1); const loc = $('#locator');
-  if (!anc || S.sel.lv < 2) { loc.hidden = true; return; }
-  loc.hidden = false;
-  $('#loclab').textContent = anc.name + (ancestorAt(S.sel, 2) ? ' › ' + ancestorAt(S.sel, 2).name : '');
-  const fc = S.geoKab[anc.key], sel2 = ancestorAt(S.sel, 2);
-  const s = d3.select('#locsvg'); s.selectAll('*').remove();
-  if (!fc) { loc.hidden = true; return; }
-  const w = loc.clientWidth - 10, h = 76;
-  s.attr('viewBox', `0 0 ${w} ${h}`);
-  const p = d3.geoPath(d3.geoMercator().fitExtent([[3, 3], [w - 3, h - 3]], fc));
-  s.append('g').selectAll('path').data(fc.features).join('path').attr('d', p)
-    .attr('fill', d => { const n = kabNodeFor(d, anc); return n && sel2 && n.key === sel2.key ? '#ec3013' : '#d7d3d3'; })
+  const P = provinceOf(S.sel), K = ancestorAt(S.sel, 2), locator = $('#locator');
+  const collection = P && S.geoKab.get(P.key);
+  if (!P || !K || !collection || collection instanceof Promise) { locator.hidden = true; return; }
+  locator.hidden = false;
+  $('#loclab').textContent = P.name + ' › ' + K.name;
+  const selection = d3.select('#locsvg');
+  selection.selectAll('*').remove();
+  const width = locator.clientWidth - 10, height = 76;
+  selection.attr('viewBox', `0 0 ${width} ${height}`);
+  const locatorPath = d3.geoPath(d3.geoMercator().fitExtent([[3, 3], [width - 3, height - 3]], collection));
+  selection.append('g').selectAll('path').data(collection.features).join('path')
+    .attr('d', locatorPath)
+    .attr('fill', feature => { const node = featureNode(feature); return node && node.key === K.key ? '#ec3013' : '#d7d3d3'; })
     .attr('stroke', '#f3f2f2').attr('stroke-width', .5);
 }
 
-/* ── tooltip ──────────────────────────────────────────────────────── */
-const tip = $('#tip');
-function tipShow(e, n) {
-  const O = opsi(), v = votesOf(n), t = v.reduce((a, b) => a + b, 0) || 1, w = winnerOf(n);
-  const top = v.map((x, i) => [x, i]).sort((a, b) => b[0] - a[0]).slice(0, 3);
-  tip.innerHTML = `<b>${n.name}</b>${LEVELS[n.lv]} · ${fmt(t)} suara sah<br>` +
-    top.map(([x, i]) => `<span style="color:${O[i].warna}">■</span> ${O[i].pendek} ${pct(x / t)}`).join('<br>');
-  tip.style.opacity = 1;
-  tip.style.left = Math.min(window.innerWidth - 262, e.clientX + 14) + 'px';
-  tip.style.top = Math.min(window.innerHeight - 96, e.clientY + 14) + 'px';
+/* ── fallback grid ───────────────────────────────────────────────── */
+function noDataLabel(node) { return `<span class="cw">${isTie(node) ? 'Perolehan seri' : 'Tidak ada perolehan'}</span>`; }
+function renderGrid() {
+  const wrap = $('#gridwrap'), node = S.sel, children = node.anak, O = opsi();
+  if (!children.length) {
+    wrap.innerHTML = `<div class="gridhead"><h4>${esc(node.name)}</h4></div>
+      <p class="note">Ini adalah tingkat wilayah terakhir pada hierarki 2019.</p>`;
+    return;
+  }
+  const rows = children.map(child => ({ child, votes: votesOf(child), total: sahOf(child), result: resultOf(child) }));
+  rows.sort((a, b) => S.sort.d * (S.sort.k === 'n'
+    ? a.child.name.localeCompare(b.child.name, 'id')
+    : number(a.total) - number(b.total)));
+  wrap.innerHTML = `<div class="gridhead"><h4>${ANAK[node.lv]} di ${esc(node.name)}</h4>
+      <span class="note">${children.length.toLocaleString('id-ID')} wilayah · tampilan grid karena GeoJSON tidak tersedia</span></div>
+    <div class="cellgrid">${rows.map(({ child, votes, total, result }) => {
+      const winner = winnerOf(child);
+      const blankTps = statOf(result, 'blank-tps') || 0;
+      const outlierVoteTps = statOf(result, 'outlier-vote-tps') || 0;
+      const tps = statOf(result, 'tps') || 0;
+      const lead = winner == null ? noDataLabel(child) : `<div style="display:flex;align-items:baseline;gap:6px">
+        <span class="cpct" style="color:${O[winner].warna}">${pct(votes[winner] / total, 0)}</span>
+        <span class="cw">${esc(O[winner].no)} ${esc(O[winner].pendek)}</span></div>`;
+      const bar = total > 0 ? `<div class="cbar">${votes.map((value, index) => value / total > .008
+        ? `<i style="flex:${value};background:${O[index].warna}"></i>` : '').join('')}</div>` : '';
+      const detail = !result || !result.present
+        ? 'Data kontes tidak tersedia'
+        : (tps > 0 && blankTps === tps
+          ? `${fmt(blankTps)} rekaman TPS kosong`
+          : `${fmt(total)} pilihan sah${blankTps > 0 ? ` · ${fmt(blankTps)} TPS kosong` : ''}${outlierVoteTps > 0 ? ` · ${fmt(outlierVoteTps)} TPS suara ekstrem` : ''}`);
+      return `<button class="cell" data-k="${esc(child.key)}"><div class="cn">${esc(child.name)}</div>${lead}${bar}
+        <div class="cw">${detail}</div></button>`;
+    }).join('')}</div>`;
+  wrap.querySelectorAll('.cell').forEach(button => {
+    const child = S.nodes.get(button.dataset.k);
+    button.onclick = () => select(child);
+    button.onmousemove = event => tipShow(event, child);
+    button.onmouseleave = tipHide;
+  });
 }
-function tipHide() { tip.style.opacity = 0; }
 
-/* ── panel analisis ───────────────────────────────────────────────── */
+/* ── tooltip dan panel analisis ──────────────────────────────────── */
+function tipElement() { return $('#tip'); }
+function tipShow(event, node) {
+  const tip = tipElement(), O = opsi(), result = resultOf(node), total = sahOf(node);
+  if (!result || !result.present || !(total > 0)) {
+    tip.innerHTML = `<b>${esc(node.name)}</b>${LEVELS[node.lv]} · tidak ada perolehan ${esc(election().nama)}`;
+  } else {
+    const top = result.votes.map((value, index) => [value, index]).sort((a, b) => b[0] - a[0]).slice(0, 3);
+    tip.innerHTML = `<b>${esc(node.name)}</b>${LEVELS[node.lv]} · ${fmt(total)} pilihan sah<br>` +
+      top.map(([value, index]) => `<span style="color:${O[index].warna}">■</span> ${esc(O[index].pendek)} ${pct(value / total)}`).join('<br>');
+  }
+  tip.style.opacity = 1;
+  tip.style.left = Math.min(window.innerWidth - 262, event.clientX + 14) + 'px';
+  tip.style.top = Math.min(window.innerHeight - 96, event.clientY + 14) + 'px';
+}
+function tipHide() { const tip = tipElement(); if (tip) tip.style.opacity = 0; }
+
+function coverageNote(node, result, choiceTotal) {
+  const summary = S.sourceSummary && S.sourceSummary[S.pemilu];
+  const anomalies = summary && summary.anomalies || {};
+  const globalAudit = summary
+    ? ` Audit seluruh sumber kontes: ${fmt(anomalies.invalid_stats_row || 0)} baris metadata anomali, ` +
+      `${fmt(anomalies.option_sum_ne_suara_sah || 0)} baris dengan Σ opsi ≠ suara sah, dan ` +
+      `${fmt(anomalies.blank_result_row || 0)} baris hasil kosong; ` +
+      `${fmt(anomalies.outlier_vote_row || 0)} baris suara opsi ekstrem.`
+    : '';
+  const sourceCoverage = node.lv <= 2
+    ? `${fmt(result.covered)} dari ${fmt(result.total)} kecamatan memiliki rekaman kontes ini`
+    : (result.present ? 'Rekaman kontes tersedia untuk wilayah ini' : 'Rekaman kontes tidak tersedia untuk wilayah ini');
+  if (!result.present) {
+    const P = provinceOf(node), chunkError = node.lv >= 3 && P && S.leafErrors.get(P.key);
+    return `<div class="banner"><span>⚑</span><span><b>Cakupan sumber:</b> ${sourceCoverage}.${chunkError ? ` Chunk hasil desa gagal dimuat (${esc(chunkError)}).` : ''}
+      Tidak ada angka yang diisi atau diperkirakan.${globalAudit}</span></div>`;
+  }
+  const totalTps = statOf(result, 'tps') || 0;
+  const validatedTps = statOf(result, 'validated-tps') || 0;
+  const blankTps = statOf(result, 'blank-tps') || 0;
+  const outlierVoteTps = statOf(result, 'outlier-vote-tps') || 0;
+  const reportedTps = Math.max(0, totalTps - blankTps);
+  const rejectedTps = Math.max(0, totalTps - validatedTps - blankTps);
+  const rawValid = statOf(result, 'suara-sah');
+  const diff = rawValid == null ? null : choiceTotal - rawValid;
+  const tpsText = totalTps > 0
+    ? `<b>${fmt(reportedTps)}/${fmt(totalTps)} rekaman TPS</b> berisi angka hasil; metadata partisipasi tervalidasi pada <b>${fmt(validatedTps)} TPS</b> (${pct(validatedTps / totalTps)} dari seluruh rekaman).`
+    : 'Jumlah TPS pada rekaman ini bernilai nol.';
+  const blankText = blankTps > 0
+    ? ` <b>${fmt(blankTps)} rekaman TPS kosong</b> dipertahankan sebagai kosong dan tidak dianggap sebagai angka nol yang dilaporkan.`
+    : '';
+  const voteOutlierText = outlierVoteTps > 0
+    ? ` <b>${fmt(outlierVoteTps)} TPS memiliki suara opsi di atas 1.000</b> di luar Papua/luar negeri; angka CSV mentah dipertahankan dan dapat memengaruhi pemenang.`
+    : '';
+  const anomalyText = rejectedTps > 0
+    ? ` <b>${fmt(rejectedTps)} TPS anomali</b> tidak dimasukkan ke lima total metadata partisipasi.`
+    : (totalTps > 0 ? ' Tidak ada TPS yang ditolak oleh pemeriksaan konsistensi metadata.' : '');
+  const diffText = diff && diff !== 0
+    ? ` Jumlah perolehan opsi berbeda ${fmt(Math.abs(diff))} suara dari kolom suara-sah tervalidasi; total pilihan yang ditampilkan selalu Σ opsi.`
+    : '';
+  return `<div class="banner"><span>⚑</span><span><b>Cakupan sumber:</b> ${sourceCoverage}. ${tpsText}${blankText}${voteOutlierText}${anomalyText}${diffText}${globalAudit}</span></div>`;
+}
+
 let showAll = false;
-function ancestorAt(n, lv) { while (n && n.lv > lv) n = n.parent; return n && n.lv === lv ? n : null; }
+function chain(node) { const out = []; while (node) { out.unshift(node); node = node.parent; } return out; }
+function crumbText(node) { return chain(node).slice(0, -1).map(item => item.name).join(' › ') || 'Republik Indonesia'; }
 function renderPanel() {
-  const n = S.sel, O = opsi(), E = PEMILU.find(e => e.id === S.pemilu);
-  const v = votesOf(n), t = v.reduce((a, b) => a + b, 0) || 1, w = winnerOf(n), b = n.base;
-  const ranked = v.map((x, i) => ({ x, i })).sort((a, b) => b.x - a.x);
-  const shown = (E.jenis === 'paslon' || showAll) ? ranked : ranked.slice(0, 6);
-  const turnout = b.dpt ? b.guna / b.dpt : 0;
-
-  const bars = shown.map(({ x, i }) => `
+  const node = S.sel, O = opsi(), E = election(), result = resultOf(node);
+  const votes = result ? result.votes : [], total = result && result.present ? votes.reduce((a, b) => a + b, 0) : null;
+  const winner = winnerOf(node), margin = marginOf(node);
+  const ranked = votes.map((value, index) => ({ value, index })).sort((a, b) => b.value - a.value);
+  const shown = E.jenis === 'paslon' || showAll ? ranked : ranked.slice(0, 6);
+  const bars = total > 0 ? shown.map(({ value, index }) => `
     <div class="bar">
-      <div class="bn"><span class="dot" style="background:${O[i].warna}"></span><span>${O[i].no}. ${O[i].pendek}</span></div>
-      <div class="bv">${pct(x / t)}</div>
-      <div class="btrack"><i class="bfill" style="width:${(x / t * 100).toFixed(2)}%;background:${O[i].warna}"></i></div>
-      <div class="babs">${fmt(x)} suara</div>
-    </div>`).join('');
+      <div class="bn"><span class="dot" style="background:${O[index].warna}"></span><span>${esc(O[index].no)}. ${esc(O[index].pendek)}</span></div>
+      <div class="bv">${pct(value / total)}</div>
+      <div class="btrack"><i class="bfill" style="width:${(value / total * 100).toFixed(2)}%;background:${O[index].warna}"></i></div>
+      <div class="babs">${fmt(value)} suara</div>
+    </div>`).join('') : '<p class="note">Tidak ada perolehan positif yang dapat dihitung menjadi persentase.</p>';
+  const tied = isTie(node);
+  const winnerBlock = winner == null
+    ? `<div class="winner" style="background:${tied ? TIE_COLOR : NO_DATA};color:#353230"><span class="wn">${tied ? 'Perolehan tertinggi seri' : 'Tidak ada pemenang yang dapat dihitung'}</span><span class="wp">${tied ? fmt(Math.max(...votes)) : '—'}</span></div>
+       <div class="rmeta" style="margin-top:6px">${tied ? `${leadersOf(node).length} opsi memperoleh suara tertinggi yang sama.` : 'Perolehan hilang atau jumlah seluruh opsi nol.'}</div>`
+    : `<div class="winner" style="background:${O[winner].warna}"><span class="wn">${esc(O[winner].no)}. ${esc(E.jenis === 'paslon' ? O[winner].pendek : O[winner].nama)}</span>
+       <span class="wp">${pct(votes[winner] / total, 1)}</span></div>
+       <div class="rmeta" style="margin-top:6px">Unggul ${pct(margin)} atas peringkat kedua</div>`;
 
-  /* perbandingan 2019 — angka asli hasil scraping bila tersedia */
-  const has19 = (b.j19 + b.p19) > 0;
-  const s19 = b.j19 + b.p19 || 1;
-  const cmp = E.jenis === 'paslon' && has19 ? `
-    <div class="psec">
-      <div class="ph">Perbandingan Pilpres 2019 ${n.sintetis || !hasRealBelow(n) ? '· basis contoh' : '· hasil scraping KPU'}</div>
-      <div class="cmp">
-        <span class="h">Paslon</span><span class="h" style="text-align:right">2019</span><span class="h" style="text-align:right">Δ 2024</span>
-        <span>01 Jokowi–Ma'ruf</span><b style="text-align:right">${pct(b.j19 / s19)}</b>
-        <span class="delta" style="text-align:right">—</span>
-        <span>02 Prabowo–Sandi</span><b style="text-align:right">${pct(b.p19 / s19)}</b>
-        <span class="delta" style="text-align:right;color:${v[1] / t - b.p19 / s19 >= 0 ? '#ae1800' : '#605d5d'}">${(v[1] / t - b.p19 / s19 >= 0 ? '+' : '') + pct(v[1] / t - b.p19 / s19)}</span>
-      </div>
-      <p class="note" style="margin:8px 0 0">Δ membandingkan Prabowo 2019 dengan Prabowo–Gibran 2024.</p>
-    </div>` : '';
-
-  const kids = n.anak;
-  const kidRows = kids.map(k => { const kv = votesOf(k), kt = kv.reduce((a, x) => a + x, 0) || 1; return { k, kv, kt, w: winnerOf(k) }; })
-    .sort((a, b) => b.kt - a.kt);
+  const registered = statOf(result, 'total-pemilih');
+  const users = statOf(result, 'total-pengguna');
+  const sourceTotal = statOf(result, 'suara-total');
+  const sourceValid = statOf(result, 'suara-sah');
+  const invalid = statOf(result, 'suara-tidak-sah');
+  const tps = statOf(result, 'tps');
+  const validatedTps = statOf(result, 'validated-tps');
+  const blankTps = statOf(result, 'blank-tps');
+  const outlierVoteTps = statOf(result, 'outlier-vote-tps');
+  const turnout = turnoutOf(node);
+  const invalidRate = sourceTotal > 0 ? invalid / sourceTotal : null;
+  const children = node.anak;
+  const childRows = children.map(child => {
+    const childTotal = sahOf(child), childWinner = winnerOf(child), childVotes = votesOf(child);
+    return { child, childTotal, childWinner, childVotes };
+  }).sort((a, b) => number(b.childTotal) - number(a.childTotal));
 
   $('#panel').innerHTML = `
     <div class="psec">
-      <div class="ph">${LEVELS[n.lv]}${n.code !== '0' && n.code !== '—' ? ' · kode ' + n.code : ''}</div>
-      <h2 class="rtitle">${n.name}</h2>
-      <div class="rmeta">${crumbText(n)}</div>
-      <div class="winner" style="background:${O[w].warna}">
-        <span class="wn">${O[w].no}. ${E.jenis === 'paslon' ? O[w].pendek : O[w].nama}</span>
-        <span class="wp">${pct(v[w] / t, 1)}</span>
-      </div>
-      <div class="rmeta" style="margin-top:6px">Unggul ${pct(marginOf(n))} atas peringkat kedua</div>
+      <div class="ph">${LEVELS[node.lv]}${node.code !== '0' ? ' · kode ' + esc(node.code) : ''}</div>
+      <h2 class="rtitle">${esc(node.name)}</h2><div class="rmeta">${esc(crumbText(node))}</div>
+      ${winnerBlock}
     </div>
-
     <div class="psec">
-      <div class="ph">Perolehan suara${E.jenis === 'dpd' ? ' · calon' : ''}</div>
-      <div class="bars">${bars}</div>
-      ${E.jenis !== 'paslon' ? `<button class="more" id="moreb">${showAll ? '↑ Ringkas' : '↓ Lihat selengkapnya (' + O.length + ' ' + (E.jenis === 'dpd' ? 'calon' : 'partai') + ')'}</button>` : ''}
+      <div class="ph">Perolehan suara</div><div class="bars">${bars}</div>
+      ${E.jenis !== 'paslon' ? `<button class="more" id="moreb">${showAll ? '↑ Ringkas' : `↓ Lihat seluruh ${O.length} partai`}</button>` : ''}
     </div>
-
-    ${E.jenis === 'dpd' ? `<div class="psec"><div class="ph">Empat calon terpilih${n.lv > 1 ? ' di ' + ancestorAt(n, 1).name : ''}</div>
-      <div class="childlist">${(() => { const P = ancestorAt(n, 1) || S.root; const pv = votesOf(P), pt = pv.reduce((a, x) => a + x, 0) || 1;
-        return pv.map((x, i) => ({ x, i })).sort((a, b) => b.x - a.x).slice(0, 4).map((o, r) =>
-        `<div class="chi" style="cursor:default"><span class="dot" style="background:${O[o.i].warna}"></span>
-          <span class="cnm">${r + 1}. ${O[o.i].nama}</span><span class="cvp">${pct(o.x / pt)}</span></div>`).join(''); })()}</div>
-      <p class="note" style="margin:8px 0 0">Nama calon adalah pengganti sementara; ganti dari data DPD 2024 KPU.</p></div>` : ''}
-
     <div class="psec">
-      <div class="ph">Suara & partisipasi</div>
+      <div class="ph">Suara & partisipasi · metadata TPS tervalidasi</div>
       <dl class="kv">
-        <dt>Suara sah</dt><dd>${fmt(t)}</dd>
-        <dt>Suara tidak sah</dt><dd>${fmt(b.tsah)}</dd>
-        <dt>Total suara masuk</dt><dd>${fmt(t + b.tsah)}</dd>
-        <dt>Pemilih terdaftar (DPT)</dt><dd>${fmt(b.dpt)}</dd>
-        <dt>Pengguna hak pilih</dt><dd>${fmt(b.guna)}</dd>
-        <dt>Jumlah TPS</dt><dd>${fmt(b.tps)}</dd>
+        <dt>Pilihan sah (jumlah seluruh opsi)</dt><dd>${result.present ? fmt(total) : '—'}</dd>
+        <dt>Suara sah (kolom sumber tervalidasi)</dt><dd>${fmt(sourceValid)}</dd>
+        <dt>Suara tidak sah (tervalidasi)</dt><dd>${fmt(invalid)}</dd>
+        <dt>Total suara (tervalidasi)</dt><dd>${fmt(sourceTotal)}</dd>
+        <dt>Pemilih terdaftar (tervalidasi)</dt><dd>${fmt(registered)}</dd>
+        <dt>Pengguna hak pilih (tervalidasi)</dt><dd>${fmt(users)}</dd>
+        <dt>TPS tervalidasi / seluruh TPS</dt><dd>${fmt(validatedTps)} / ${fmt(tps)}</dd>
+        <dt>Rekaman TPS dengan hasil kosong</dt><dd>${fmt(blankTps)}</dd>
+        <dt>TPS dengan suara opsi ekstrem</dt><dd>${fmt(outlierVoteTps)}</dd>
       </dl>
-      <div class="turnout"><i style="width:${(turnout * 100).toFixed(1)}%"></i></div>
-      <div class="rmeta">Partisipasi ${pct(turnout)} · suara tidak sah ${pct(b.tsah / (t + b.tsah))}</div>
+      <div class="turnout"><i style="width:${turnout == null ? 0 : Math.max(0, Math.min(100, turnout * 100)).toFixed(1)}%"></i></div>
+      <div class="rmeta">Partisipasi tervalidasi ${pct(turnout)} · suara tidak sah ${pct(invalidRate)}</div>
     </div>
-    ${cmp}
-    ${kids.length ? `<div class="psec">
-      <div class="ph">${ANAK[n.lv]} (${kids.length}) · klik untuk memperdalam</div>
-      <div class="childlist">${kidRows.map(({ k, kv, kt, w }) => `
-        <button class="chi" data-k="${k.key}">
-          <span class="dot" style="background:${O[w].warna}"></span>
-          <span class="cnm">${k.name}</span>
-          <span class="cvp">${pct(kv[w] / kt, 0)}</span></button>`).join('')}</div></div>` : ''}
-    <div class="psec">
-      <div class="banner"><span>⚑</span><span><b>Angka 2024 adalah data contoh.</b> Hierarki wilayah, jumlah TPS dan
-      angka 2019 diambil dari hasil scraping KPU milik Anda. Perolehan 2024 dihasilkan model deterministik
-      sampai file resmi dipasang.</span></div>
-    </div>`;
-
-  const mb = $('#moreb'); if (mb) mb.onclick = () => { showAll = !showAll; renderPanel(); };
-  $('#panel').querySelectorAll('.chi[data-k]').forEach(el => el.onclick = () => select(S.nodes.get(el.dataset.k)));
+    <div class="psec">${coverageNote(node, result, total || 0)}</div>
+    ${children.length ? `<div class="psec"><div class="ph">${ANAK[node.lv]} (${children.length.toLocaleString('id-ID')}) · klik untuk memperdalam</div>
+      <div class="childlist">${childRows.map(({ child, childTotal, childWinner, childVotes }) => {
+        if (childWinner == null) return `<button class="chi" data-k="${esc(child.key)}"><span class="dot" style="background:${isTie(child) ? TIE_COLOR : NO_DATA}"></span>
+          <span class="cnm">${esc(child.name)}</span><span class="cvp">${isTie(child) ? 'Seri' : '—'}</span></button>`;
+        return `<button class="chi" data-k="${esc(child.key)}"><span class="dot" style="background:${O[childWinner].warna}"></span>
+          <span class="cnm">${esc(child.name)}</span><span class="cvp">${pct(childVotes[childWinner] / childTotal, 0)}</span></button>`;
+      }).join('')}</div></div>` : ''}`;
+  const more = $('#moreb');
+  if (more) more.onclick = () => { showAll = !showAll; renderPanel(); };
+  $('#panel').querySelectorAll('.chi[data-k]').forEach(element => {
+    element.onclick = () => select(S.nodes.get(element.dataset.k));
+  });
 }
-function hasRealBelow(n) { if (n.lv === 3) return !!n.anak.length; if (n.lv === 4) return true; return n.anak.some(hasRealBelow); }
 
-/* ── breadcrumb, tabel, pencarian ─────────────────────────────────── */
-function chain(n) { const a = []; while (n) { a.unshift(n); n = n.parent; } return a; }
-function crumbText(n) { return chain(n).slice(0, -1).map(x => x.name).join(' › ') || 'Republik Indonesia'; }
+/* ── breadcrumb, tabel, pencarian, ekspor ────────────────────────── */
 function renderCrumbs() {
-  const c = chain(S.sel);
-  $('#crumbs').innerHTML = c.map((n, i) =>
-    `${i ? '<span class="crumbsep">›</span>' : ''}<button class="crumb" data-k="${n.key}" aria-current="${i === c.length - 1}">${n.name}</button>`).join('');
-  $('#crumbs').querySelectorAll('.crumb').forEach(b => b.onclick = () => select(S.nodes.get(b.dataset.k)));
-  $('#viewinfo').textContent = S.sel.lv <= 1 ? 'Peta geografis' : 'Grid wilayah · tanpa geometri';
+  const items = chain(S.sel);
+  $('#crumbs').innerHTML = items.map((node, index) =>
+    `${index ? '<span class="crumbsep">›</span>' : ''}<button class="crumb" data-k="${esc(node.key)}" aria-current="${index === items.length - 1}">${esc(node.name)}</button>`).join('');
+  $('#crumbs').querySelectorAll('.crumb').forEach(button => {
+    button.onclick = () => select(S.nodes.get(button.dataset.k));
+  });
 }
 function renderTable() {
-  const n = S.sel, O = opsi(), kids = n.anak, T = $('#dtable');
-  if (!kids.length) { T.innerHTML = '<tbody><tr><td style="padding:14px">Tidak ada rincian wilayah di bawah ' + n.name + '.</td></tr></tbody>'; return; }
-  const cols = O.length > 8 ? O.slice().sort((a, b) => b.anchor - a.anchor).slice(0, 8) : O;
-  const idx = cols.map(c => O.indexOf(c));
-  const rows = kids.map(k => ({ k, v: votesOf(k), s: sahOf(k) }));
-  rows.sort((a, b) => S.sort.d * (S.sort.k === 'n' ? (a.k.name > b.k.name ? 1 : -1) : S.sort.k === 'v' ? a.s - b.s : a.v[S.sort.k] / (a.s || 1) - b.v[S.sort.k] / (b.s || 1)));
-  T.innerHTML = `<thead><tr>
-      <th data-s="n">${ANAK[n.lv]}</th><th data-s="v" style="text-align:right">Suara sah</th>
-      <th style="text-align:right">Partisipasi</th>
-      ${cols.map((c, j) => `<th data-s="${idx[j]}" style="text-align:right">${c.pendek}</th>`).join('')}
-      <th>Unggul</th></tr></thead>
-    <tbody>${rows.map(({ k, v, s }) => { const w = winnerOf(k), t = s || 1; return `<tr>
-      <td class="nm" data-k="${k.key}">${k.name}</td><td style="text-align:right">${fmt(s)}</td>
-      <td style="text-align:right">${k.base.dpt ? pct(k.base.guna / k.base.dpt, 1) : '—'}</td>
-      ${idx.map(i => `<td style="text-align:right">${pct(v[i] / t, 1)}</td>`).join('')}
-      <td><span class="dot" style="display:inline-block;background:${O[w].warna}"></span> ${O[w].pendek}</td></tr>`; }).join('')}</tbody>`;
-  T.querySelectorAll('th[data-s]').forEach(th => th.onclick = () => {
-    const k = th.dataset.s === 'n' || th.dataset.s === 'v' ? th.dataset.s : +th.dataset.s;
-    S.sort = { k, d: S.sort.k === k ? -S.sort.d : -1 }; renderTable(); renderGrid();
+  const node = S.sel, O = opsi(), children = node.anak, table = $('#dtable');
+  if (!children.length) {
+    table.innerHTML = `<tbody><tr><td style="padding:14px">Tidak ada rincian wilayah di bawah ${esc(node.name)}.</td></tr></tbody>`;
+    return;
+  }
+  const indexes = O.map((_, index) => index);
+  const rows = children.map(child => ({ child, votes: votesOf(child), total: sahOf(child), result: resultOf(child) }));
+  rows.sort((a, b) => S.sort.d * (S.sort.k === 'n'
+    ? a.child.name.localeCompare(b.child.name, 'id')
+    : S.sort.k === 'v' ? number(a.total) - number(b.total)
+      : (a.total > 0 ? a.votes[S.sort.k] / a.total : -1) - (b.total > 0 ? b.votes[S.sort.k] / b.total : -1)));
+  table.innerHTML = `<thead><tr><th data-s="n">${ANAK[node.lv]}</th><th data-s="v" style="text-align:right">Pilihan sah (Σ opsi)</th>
+      <th style="text-align:right">Partisipasi valid</th>
+      <th style="text-align:right">TPS kosong</th>
+      <th style="text-align:right">TPS suara ekstrem</th>
+      ${indexes.map(index => `<th data-s="${index}" style="text-align:right">${esc(O[index].no)} ${esc(O[index].pendek)}</th>`).join('')}
+      <th>Pemenang</th></tr></thead>
+    <tbody>${rows.map(({ child, votes, total, result }) => {
+      const winner = winnerOf(child), turnout = turnoutOf(child);
+      return `<tr><td class="nm" data-k="${esc(child.key)}">${esc(child.name)}</td><td style="text-align:right">${fmt(total)}</td>
+        <td style="text-align:right">${pct(turnout, 1)}</td>
+        <td style="text-align:right">${fmt(statOf(result, 'blank-tps'))}</td>
+        <td style="text-align:right">${fmt(statOf(result, 'outlier-vote-tps'))}</td>
+        ${indexes.map(index => `<td style="text-align:right">${total > 0 ? pct(votes[index] / total, 1) : '—'}</td>`).join('')}
+        <td>${winner == null ? '<span class="dot" style="display:inline-block;background:' + (isTie(child) ? TIE_COLOR : NO_DATA) + '"></span> ' + (isTie(child) ? 'Seri' : 'Tidak ada data')
+          : `<span class="dot" style="display:inline-block;background:${O[winner].warna}"></span> ${esc(O[winner].pendek)}`}</td></tr>`;
+    }).join('')}</tbody>`;
+  table.querySelectorAll('th[data-s]').forEach(header => {
+    header.onclick = () => {
+      const key = header.dataset.s === 'n' || header.dataset.s === 'v' ? header.dataset.s : +header.dataset.s;
+      S.sort = { k: key, d: S.sort.k === key ? -S.sort.d : -1 };
+      renderTable();
+      if (!S.hasGeoView) renderGrid();
+    };
   });
-  T.querySelectorAll('td.nm').forEach(td => td.onclick = () => select(S.nodes.get(td.dataset.k)));
+  table.querySelectorAll('td.nm').forEach(cell => { cell.onclick = () => select(S.nodes.get(cell.dataset.k)); });
 }
 function buildIndex() {
-  for (const n of S.nodes.values()) if (n.lv > 0) S.index.push({ n, s: n.name.toUpperCase() });
+  S.index = [];
+  for (const node of S.nodes.values()) if (node.lv > 0) S.index.push({ node, text: node.name.toUpperCase() });
 }
-function search(q) {
-  q = q.trim().toUpperCase(); const box = $('#qr');
+function search(query) {
+  const q = query.trim().toUpperCase(), box = $('#qr');
   if (q.length < 2) { box.hidden = true; return; }
-  const hits = [];
-  for (const it of S.index) { if (it.s.startsWith(q)) { hits.push(it); if (hits.length > 40) break; } }
-  if (hits.length < 25) for (const it of S.index) { if (!it.s.startsWith(q) && it.s.includes(q)) { hits.push(it); if (hits.length > 40) break; } }
-  hits.sort((a, b) => a.n.lv - b.n.lv);
+  const hits = [], seen = new Set();
+  const add = item => { if (!seen.has(item.node.key) && hits.length < 40) { hits.push(item); seen.add(item.node.key); } };
+  for (const item of S.index) if (item.text.startsWith(q)) add(item);
+  if (hits.length < 25) for (const item of S.index) if (item.text.includes(q)) add(item);
+  hits.sort((a, b) => a.node.lv - b.node.lv || a.node.name.localeCompare(b.node.name, 'id'));
   box.hidden = false;
-  box.innerHTML = hits.slice(0, 30).map(h =>
-    `<button data-k="${h.n.key}"><span class="rl">${LEVELS[h.n.lv]}</span><br>${h.n.name}
-      <span class="rl"> — ${crumbText(h.n)}</span></button>`).join('') || '<div style="padding:8px;font-size:12px">Tidak ditemukan.</div>';
-  box.querySelectorAll('button').forEach(b => b.onclick = () => {
-    select(S.nodes.get(b.dataset.k)); box.hidden = true; $('#q').value = '';
+  box.innerHTML = hits.slice(0, 30).map(({ node }) =>
+    `<button data-k="${esc(node.key)}"><span class="rl">${LEVELS[node.lv]}</span><br>${esc(node.name)}
+      <span class="rl"> — ${esc(crumbText(node))}</span></button>`).join('') || '<div style="padding:8px;font-size:12px">Tidak ditemukan.</div>';
+  box.querySelectorAll('button').forEach(button => {
+    button.onclick = () => { select(S.nodes.get(button.dataset.k)); box.hidden = true; $('#q').value = ''; };
   });
 }
+function csvCell(value) {
+  if (value == null) return '';
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
 function exportCSV() {
-  const n = S.sel, O = opsi(), kids = n.anak;
-  if (!kids.length) return;
-  const head = ['wilayah', 'tingkat', 'dpt', 'pengguna', 'suara_sah', 'suara_tidak_sah', ...O.map(o => o.no + '_' + o.pendek.replace(/\s+/g, '_'))];
-  const lines = [head.join(',')].concat(kids.map(k => {
-    const v = votesOf(k);
-    return ['"' + k.name + '"', ANAK[n.lv], k.base.dpt, k.base.guna, sahOf(k), k.base.tsah, ...v].join(',');
-  }));
-  const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
-  const a = document.createElement('a');
-  a.href = url; a.download = `pemilu2024-${S.pemilu}-${n.name.toLowerCase().replace(/\s+/g, '-')}.csv`; a.click();
+  const node = S.sel, E = election(), children = node.anak;
+  if (!children.length) return;
+  const head = ['kode_wilayah', 'wilayah', 'tingkat', 'rekaman_tersedia', 'pilihan_sah_jumlah_opsi',
+    ...S.statNames, ...E.voteColumns];
+  const lines = [head.map(csvCell).join(',')];
+  for (const child of children) {
+    const result = resultOf(child), total = result && result.present ? result.votes.reduce((a, b) => a + b, 0) : null;
+    const row = [child.key, child.name, ANAK[node.lv], result && result.present ? 1 : 0, total,
+      ...S.statNames.map(name => statOf(result, name)), ...(result && result.present ? result.votes : new Array(E.opsi.length).fill(null))];
+    lines.push(row.map(csvCell).join(','));
+  }
+  const url = URL.createObjectURL(new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  const slug = node.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || node.key.toLowerCase();
+  link.href = url;
+  link.download = `pemilu2019-${S.pemilu}-${slug}.csv`;
+  link.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-/* ── orkestrasi ───────────────────────────────────────────────────── */
+/* ── orkestrasi ──────────────────────────────────────────────────── */
+function updateSourceNote() {
+  const rootResult = resultOf(S.root);
+  const coverage = rootResult && rootResult.total ? `${fmt(rootResult.covered)}/${fmt(rootResult.total)} kecamatan` : 'tanpa rekaman';
+  const summary = S.sourceSummary && S.sourceSummary[S.pemilu];
+  const sourceSize = summary
+    ? `${fmt(summary.files)} file · ${fmt(summary.rows)} baris TPS`
+    : 'CSV KPU 2019';
+  $('#srcnote').textContent = `${S.nodes.size.toLocaleString('id-ID')} wilayah · ${coverage} · ${sourceSize} · GeoJSON lokal, batas diselaraskan ke hierarki 2019`;
+}
 let selectVersion = 0;
 async function select(node) {
   if (!node) return;
   const version = ++selectVersion;
-  S.sel = node; showAll = false;
-  const P = ancestorAt(node, 1);
-  if (P) await loadKab(P);
-  if (version !== selectVersion) return;
-  if (node.lv >= 3) await loadKecGIS(ancestorAt(node, 2));
+  S.sel = node;
+  showAll = false;
+  await prepareSelection(node);
   if (version !== selectVersion) return;
   await renderAll();
-  if (version === selectVersion && node.lv <= 1) {
-    zoomToFeature(node.lv === 0 ? null : featureOfProv(node));
-  }
 }
 async function renderAll() {
-  $('#map').style.display = '';
-  $('#gridwrap').hidden = true;
-  $('#zoombtns').style.display = '';
-  renderCrumbs(); renderModes(); updateScale(); renderLegend();
-  await drawGeo();
-  renderLocator(); renderPanel(); renderTable();
-  $('#srcnote').textContent = `${S.nodes.size.toLocaleString('id-ID')} wilayah dimuat · geometri: GIS SHP KPU 2019 · basis: scraping KPU`;
+  renderCrumbs();
+  renderModes();
+  updateScale();
+  renderLegend();
+  S.hasGeoView = await drawGeo();
+  $('#map').style.display = S.hasGeoView ? '' : 'none';
+  $('#zoombtns').style.display = S.hasGeoView ? '' : 'none';
+  $('#gridwrap').hidden = S.hasGeoView;
+  if (!S.hasGeoView) renderGrid();
+  $('#viewinfo').textContent = S.hasGeoView ? 'Peta geografis · batas selaras hierarki 2019' : 'Grid wilayah · GeoJSON tidak tersedia';
+  renderLocator();
+  renderPanel();
+  renderTable();
+  updateSourceNote();
 }
 
-(async function boot() {
+async function boot() {
   try {
-    const raw = await (await fetch('data/wilayah.json')).json();
+    const provinceGeo = fetch('data/gis/provinsi.json')
+      .then(response => {
+        if (!response.ok) throw new Error(`provinsi.json HTTP ${response.status}`);
+        return response.json();
+      })
+      .catch(error => {
+        console.warn('GeoJSON provinsi gagal dimuat; memakai grid wilayah.', error);
+        return null;
+      });
+    const [raw, electionData, provinces] = await Promise.all([
+      fetch('data/wilayah.json').then(response => { if (!response.ok) throw new Error(`wilayah.json HTTP ${response.status}`); return response.json(); }),
+      fetch('data/election2019.json').then(response => { if (!response.ok) throw new Error(`election2019.json HTTP ${response.status}`); return response.json(); }),
+      provinceGeo
+    ]);
+    if (raw.schema !== 2) throw new Error(`Skema wilayah ${raw.schema || 'lama'} tidak didukung; bangun ulang data schema 2.`);
+    if (electionData.schema !== 2) throw new Error(`Skema hasil ${electionData.schema || 'lama'} tidak didukung; bangun ulang data schema 2.`);
     S.root = buildTree(raw);
-    S.provByNorm = new Map(S.root.anak.map(p => [norm(p.name), p]));
-    buildIndex();
-    try { S.e2019 = await (await fetch('data/election2019.json')).json(); } catch (e) { console.warn('election2019.json failed', e); }
-    try { S.kecIndex = await (await fetch('data/gis/kec_index.json')).json(); } catch (e) { S.kecIndex = {}; }
+    installElectionData(electionData);
+    if (!PEMILU.length) throw new Error('Tidak ada kontes Pemilu 2019 yang dapat dimuat.');
+    S.geoProv = provinces;
     S.sel = S.root;
-    renderTabs(); initMap();
-    buildElection('pilpres');
-    $('#loading').textContent = 'Memuat peta…';
-    try {
-      const topo = await (await fetch(GH + 'provinsi/provinces-simplified-topo.json')).json();
-      const key = Object.keys(topo.objects)[0];
-      S.geoProv = topojson.feature(topo, topo.objects[key]);
-      const miss = S.geoProv.features.filter(f => !provNodeFor(f));
-      if (miss.length) console.warn('provinsi tanpa pasangan data:', miss.map(f => JSON.stringify(f.properties)));
-      fitProjection();
-    } catch (e) {
-      console.warn('geometri provinsi gagal dimuat', e);
-      $('#viewport').insertAdjacentHTML('beforeend',
-        '<div class="loading" style="padding:20px;text-align:center">Geometri peta tidak dapat diunduh.<br>Grid wilayah tetap berfungsi.</div>');
-    }
+    buildIndex();
+    renderTabs();
+    initMap();
+    $('#loading').textContent = 'Merender peta…';
+    await renderAll();
     $('#loading').remove();
-    renderAll();
-  } catch (e) {
-    console.error(e);
-    $('#loading').textContent = 'Gagal memuat data: ' + e.message;
+  } catch (error) {
+    console.error(error);
+    $('#loading').textContent = 'Gagal memuat data: ' + error.message;
   }
-  $('#q').addEventListener('input', e => search(e.target.value));
+
+  $('#q').addEventListener('input', event => search(event.target.value));
   $('#q').addEventListener('blur', () => setTimeout(() => { $('#qr').hidden = true; }, 180));
   $('#ttoggle').onclick = () => $('#tablewrap').classList.toggle('open');
   $('#tcsv').onclick = exportCSV;
-  addEventListener('resize', () => { if (S.geoProv) { fitProjection(); if (S.sel.lv <= 1) drawGeo(); } });
-  addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-    if ((e.key === 'Escape' || e.key === 'Backspace') && S.sel.parent) { e.preventDefault(); select(S.sel.parent); }
-    if (e.key === '/') { e.preventDefault(); $('#q').focus(); }
-    const i = ['1', '2', '3', '4', '5'].indexOf(e.key);
-    if (i >= 0) document.querySelectorAll('.tab')[i].click();
+  addEventListener('resize', () => { if (S.sel) renderAll(); });
+  addEventListener('keydown', event => {
+    if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
+    if ((event.key === 'Escape' || event.key === 'Backspace') && S.sel && S.sel.parent) { event.preventDefault(); select(S.sel.parent); }
+    if (event.key === '/') { event.preventDefault(); $('#q').focus(); }
+    const index = ['1', '2', '3', '4'].indexOf(event.key);
+    const tabs = document.querySelectorAll('.tab');
+    if (index >= 0 && tabs[index]) tabs[index].click();
   });
-})();
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    PARTY_SPEC, CONTEST_ORDER, S, normalizeContests, buildTree, installElectionData,
+    parseEntry, combineResults, resultOf, leadersOf, winnerOf, isTie, marginOf, featureNode, columnKey
+  };
+}
+if (typeof document !== 'undefined') boot();
