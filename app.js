@@ -91,8 +91,10 @@ const ATLAS = {
   'GORONTALO': 'Gorontalo', 'SULAWESI BARAT': 'Sulawesi Barat', 'MALUKU': 'Maluku',
   'MALUKU UTARA': 'Maluku Utara', 'PAPUA': 'Papua', 'PAPUA BARAT': 'Papua Barat'
 };
-const GH = 'https://cdn.jsdelivr.net/gh/ghapsara/indonesia-atlas@master/';
+// Dipin agar kontrak field/id atlas tidak berubah tanpa audit pemetaan ulang.
+const GH = 'https://cdn.jsdelivr.net/gh/ghapsara/indonesia-atlas@98ee142f377356ca2b4335d1b89ecfbc668522f1/';
 const slug = s => s.toLowerCase().replace(/\s+/g, '-');
+const ATLAS_EXTRAS = { 'Jakarta': ['kepulauan-seribu-simplified-topo.json'] };
 
 /* ── state ────────────────────────────────────────────────────────── */
 const S = {
@@ -380,14 +382,102 @@ function provNodeFor(feature) {
 }
 const stripKab = s => norm(s).replace(/^(KABUPATEN|KAB|KOTA ADMINISTRASI|KOTA ADM|KOTA)\s+/, '').trim();
 const tight = s => stripKab(s).replace(/\s+/g, '');
+const compact = s => norm(s).replace(/\s+/g, '');
+const normKec = s => norm(s).replace(/^(KECAMATAN|KEC)\s+/, '').trim();
+const compactKec = s => normKec(s).replace(/\s+/g, '');
+
+/* Koreksi atribut yang memang salah/bernama lama pada indonesia-atlas. ID BPS
+   tetap stabil, sehingga alias ini tidak bergantung pada urutan fitur. */
+const KAB_GEO_ALIASES = {
+  '12-77': 'KOTA PADANG SIDEMPUAN',
+  '61-71': 'KOTA PONTIANAK',
+  '71-08': 'KEPULAUAN SIAU TAGULANDANG BIARO',
+  '75-03': 'PAHUWATO',
+  '76-05': 'PASANGKAYU',
+  '91-12': 'PEGUNUNGAN ARFAK'
+};
+
+function kabFeatureId(feature) {
+  const m = String(feature && feature.id != null ? feature.id : '').match(/^(\d{2})-(\d{2})$/);
+  return m ? `${m[1]}-${m[2]}` : '';
+}
+function kabFeatureCode(feature) {
+  const id = kabFeatureId(feature);
+  return id ? id.replace('-', '') : '';
+}
+function kabFeatureType(feature) {
+  const id = kabFeatureId(feature);
+  if (!id) return '';
+  const code = Number(id.slice(-2));
+  if (code >= 1 && code <= 69) return 'kab';
+  if (code >= 71 && code <= 79) return 'kota';
+  return 'other'; // danau, waduk, hutan, dan fitur non-administratif lain
+}
+function kabNodeType(node) {
+  const name = norm(node.name);
+  if (/^KOTA(?:\s+ADMINISTRASI)?\s+/.test(name)) return 'kota';
+  // Dataset KPU menulis lima kota administrasi DKI tanpa awalan KOTA.
+  if (norm(node.parent && node.parent.name || '') === 'JAKARTA' && /^JAKARTA\s+/.test(name)) return 'kota';
+  return 'kab';
+}
+function kabFeatureName(feature) {
+  const p = feature && feature.properties || {};
+  return p.kabkot || p.kabupaten_kota || p.kabupaten || p.kota || p.name || p.nama || '';
+}
+function kabFeatureBase(feature) {
+  let name = norm(kabFeatureName(feature));
+  const type = kabFeatureType(feature);
+  if (type === 'kota') name = name.replace(/^(KOTA ADMINISTRASI|KOTA ADM|KOTA)\s+/, '');
+  if (type === 'kab') name = name.replace(/^(KABUPATEN|KAB)\s+/, '');
+  return name.trim();
+}
 function kabNodeFor(feature, P) {
-  const vals = Object.values(feature.properties || {}).filter(v => typeof v === 'string');
-  for (const v of vals) { const k = P.kabByNorm.get(stripKab(v)) || P.kabByTight.get(tight(v)); if (k) return k; }
-  for (const v of vals) {
-    const t = tight(v); if (t.length < 7) continue;
-    for (const [key, node] of P.kabByTight) if (key.includes(t) || t.includes(key)) return node;
+  if (!feature || !P) return null;
+  const type = kabFeatureType(feature);
+  if (type === 'other') return null;
+
+  const alias = KAB_GEO_ALIASES[kabFeatureId(feature)];
+  if (alias) {
+    const hit = P.anak.find(node => norm(node.name) === norm(alias));
+    if (hit) return hit;
   }
+
+  const base = kabFeatureBase(feature);
+  if (!base) return null;
+  const pool = type ? P.anak.filter(node => kabNodeType(node) === type) : P.anak;
+  let hits = pool.filter(node => stripKab(node.name) === base);
+  if (hits.length === 1) return hits[0];
+
+  const key = base.replace(/\s+/g, '');
+  hits = pool.filter(node => tight(node.name) === key);
+  if (hits.length === 1) return hits[0];
+
   return null;
+}
+
+function bindKabGeoCodes(P, featureCollection) {
+  P.anak.forEach(node => { node.geoCodes = []; });
+  for (const feature of featureCollection.features || []) {
+    const node = kabNodeFor(feature, P), code = kabFeatureCode(feature);
+    if (node && code && !node.geoCodes.includes(code)) node.geoCodes.push(code);
+  }
+}
+
+function kecIndexKey(kabNode) {
+  return `${norm(kabNode.parent.name)}|${norm(kabNode.name)}`;
+}
+function kecCodeCandidates(kabNode) {
+  const candidates = [];
+  if (S.kecIndex) {
+    // Crosswalk shapefile didahulukan karena kode kabupaten pada SHP lama dapat
+    // berbeda dari ID BPS atlas modern (contoh Bandung: 3206 vs 32-04).
+    candidates.push(S.kecIndex[kecIndexKey(kabNode)]);
+    // Kompatibilitas untuk indeks lama; indeks baru selalu province-aware.
+    candidates.push(S.kecIndex[stripKab(kabNode.name)]);
+  }
+  candidates.push(...(kabNode.geoCodes || []));
+  return [...new Set(candidates.filter(Boolean).map(code => String(code).replace(/\D/g, '').padStart(4, '0'))
+    .filter(code => /^\d{4}$/.test(code)))];
 }
 
 async function loadKecGIS(kabNode) {
@@ -395,16 +485,34 @@ async function loadKecGIS(kabNode) {
   const key = kabNode.key;
   if (S.geoKec[key] !== undefined) return S.geoKec[key];
 
-  const kabName = stripKab(kabNode.name);
-  // Try BPS code from index first
-  const bpsCode = S.kecIndex ? S.kecIndex[kabName] : null;
-  if (bpsCode) {
+  // Evaluasi semua kandidat. ID atlas modern dan kode pada shapefile lama tidak
+  // selalu identik, jadi kandidat dengan cakupan child kecamatan terbesar yang
+  // dipakai, bukan file pertama yang kebetulan ditemukan.
+  const bpsCodes = kecCodeCandidates(kabNode);
+  let best = null;
+  for (const bpsCode of bpsCodes) {
     try {
       const res = await fetch(`data/gis/kec/${encodeURIComponent(bpsCode)}.json`);
-      if (res.ok) { S.geoKec[key] = await res.json(); return S.geoKec[key]; }
+      if (res.ok) {
+        const data = await res.json();
+        const features = (data.features || []).filter(feature => kecNodeFor(feature, kabNode));
+        const covered = new Set(features.map(feature => kecNodeFor(feature, kabNode).key)).size;
+        if (covered && (!best || covered > best.covered)) {
+          best = { covered, data: { type: 'FeatureCollection', features } };
+        }
+      }
     } catch (e) {}
   }
-  // Fallback: load individual kecamatan files for each child and merge
+  if (best) {
+    bindKecGeoNames(kabNode, best.data.features);
+    S.geoKec[key] = best.data;
+    return best.data;
+  }
+
+  // Fallback file bernama kecamatan hanya aman bila kode kabupaten fitur cocok;
+  // nama kecamatan yang sama banyak ditemukan di kabupaten/provinsi lain.
+  if (!bpsCodes.length) { S.geoKec[key] = null; return null; }
+  const acceptedCodes = new Set(bpsCodes);
   const allFeatures = [];
   const fetches = kabNode.anak.map(async (child) => {
     const kecName = norm(child.name).replace(/[^A-Z0-9_\-\s]/g, '').trim();
@@ -412,12 +520,16 @@ async function loadKecGIS(kabNode) {
       const res = await fetch(`data/gis/kec/${encodeURIComponent(kecName)}.json`);
       if (res.ok) {
         const j = await res.json();
-        if (j.features) allFeatures.push(...j.features);
+        if (j.features) allFeatures.push(...j.features.filter(feature => {
+          const code = String(feature.properties && feature.properties.kode_kab || '').replace(/\D/g, '').padStart(4, '0');
+          return acceptedCodes.has(code) && kecNodeFor(feature, kabNode);
+        }));
       }
     } catch (e) {}
   });
   await Promise.all(fetches);
   if (allFeatures.length > 0) {
+    bindKecGeoNames(kabNode, allFeatures);
     S.geoKec[key] = { type: 'FeatureCollection', features: allFeatures };
     return S.geoKec[key];
   }
@@ -430,23 +542,27 @@ async function loadDesaGIS(kecNode) {
   const key = kecNode.key;
   if (S.geoDesa[key] !== undefined) return S.geoDesa[key];
 
-  const kecName = norm(kecNode.name);
-  const baseKecName = kecName.split(' ')[0];
   const kabNode = kecNode.parent;
-  const kabName = kabNode ? stripKab(kabNode.name) : '';
+  const kabNames = kabNode ? desaKabLabels(kabNode) : [];
+  const kecNames = desaKecLabels(kecNode);
 
   const candidates = [];
-  if (kabName && kecName) candidates.push(`${kabName}_${kecName}`);
-  if (kecName) candidates.push(kecName);
-  if (kabName && baseKecName && baseKecName !== kecName) candidates.push(`${kabName}_${baseKecName}`);
-  if (baseKecName && baseKecName !== kecName) candidates.push(baseKecName);
+  for (const kabName of kabNames) for (const kecName of kecNames) candidates.push(`${kabName}_${kecName}`);
+  candidates.push(...kecNames);
 
-  for (const c of candidates) {
+  for (const c of [...new Set(candidates)]) {
     try {
       const res = await fetch(`data/gis/desa/${encodeURIComponent(c)}.json`);
       if (res.ok) {
-        S.geoDesa[key] = await res.json();
-        return S.geoDesa[key];
+        const data = await res.json();
+        const features = (data.features || []).filter(feature => {
+          const p = feature.properties || {};
+          return p.kab && p.kec && sameKabLabel(p.kab, kabNode) && sameKecLabel(p.kec, kecNode);
+        });
+        if (features.length) {
+          S.geoDesa[key] = { type: 'FeatureCollection', features };
+          return S.geoDesa[key];
+        }
       }
     } catch (e) {}
   }
@@ -454,33 +570,73 @@ async function loadDesaGIS(kecNode) {
   return null;
 }
 
+const KEC_GEO_ALIASES = {
+  'YOGYAKARTA|BANTUL|PLERED': 'PLERET',
+  'YOGYAKARTA|SLEMAN|GODEYAN': 'GODEAN'
+};
+function kecGeoAliasKey(kabNode, sourceName) {
+  return `${norm(kabNode.parent.name)}|${norm(kabNode.name)}|${normKec(sourceName)}`;
+}
 function kecNodeFor(feature, kabNode) {
-  const fName = norm(feature.properties.name || '');
+  const fName = normKec(feature.properties.name || '');
   if (!fName || !kabNode) return null;
-  for (const child of kabNode.anak) {
-    if (norm(child.name) === fName) return child;
-  }
-  for (const child of kabNode.anak) {
-    if (norm(child.name).includes(fName) || fName.includes(norm(child.name))) return child;
+  let hits = kabNode.anak.filter(child => normKec(child.name) === fName);
+  if (hits.length === 1) return hits[0];
+  const key = compactKec(fName);
+  hits = kabNode.anak.filter(child => compactKec(child.name) === key);
+  if (hits.length === 1) return hits[0];
+
+  const alias = KEC_GEO_ALIASES[kecGeoAliasKey(kabNode, fName)];
+  if (alias) {
+    const hit = kabNode.anak.find(child => normKec(child.name) === normKec(alias));
+    if (hit) return hit;
   }
   return null;
+}
+
+function bindKecGeoNames(kabNode, features) {
+  kabNode.anak.forEach(child => { child.geoNames = []; });
+  for (const feature of features) {
+    const child = kecNodeFor(feature, kabNode);
+    const sourceName = norm(feature.properties && feature.properties.name || '');
+    if (child && sourceName && !child.geoNames.includes(sourceName)) child.geoNames.push(sourceName);
+  }
+}
+
+const DESA_KAB_LABEL_ALIASES = {
+  'YOGYAKARTA|KOTA YOGYAKARTA': ['KDY YOGYAKART']
+};
+function desaKabLabels(kabNode) {
+  const key = `${norm(kabNode.parent.name)}|${norm(kabNode.name)}`;
+  return [...new Set([norm(kabNode.name), ...(DESA_KAB_LABEL_ALIASES[key] || []).map(norm)])];
+}
+function desaKecLabels(kecNode) {
+  return [...new Set([norm(kecNode.name), ...(kecNode.geoNames || []).map(norm)])];
+}
+function sameKabLabel(sourceName, kabNode) {
+  const source = compact(sourceName);
+  return desaKabLabels(kabNode).some(label => compact(label) === source);
+}
+function sameKecLabel(sourceName, kecNode) {
+  const source = compactKec(sourceName);
+  return desaKecLabels(kecNode).some(label => compactKec(label) === source);
 }
 
 function desaNodeFor(feature, kecNode) {
   const fName = norm(feature.properties.name || '');
   if (!fName || !kecNode) return null;
-  for (const child of kecNode.anak) {
-    if (norm(child.name) === fName) return child;
-  }
-  for (const child of kecNode.anak) {
-    if (norm(child.name).includes(fName) || fName.includes(norm(child.name))) return child;
-  }
+  let hits = kecNode.anak.filter(child => norm(child.name) === fName);
+  if (hits.length === 1) return hits[0];
+  const key = compact(fName);
+  hits = kecNode.anak.filter(child => compact(child.name) === key);
+  if (hits.length === 1) return hits[0];
   return null;
 }
 
 async function drawGeo() {
   if (!S.geoProv) return;
   const lv = S.sel.lv;
+  const selectedKey = S.sel.key;
 
   if (lv <= 1) {
     gKec.selectAll('path').remove();
@@ -518,10 +674,12 @@ async function drawGeo() {
   if (lv === 2) {
     gProv.selectAll('path').remove();
     gKab.selectAll('path').remove();
+    gKec.selectAll('path').remove();
     gDesa.selectAll('path').remove();
 
     const kabNode = S.sel;
     const kecFC = await loadKecGIS(kabNode);
+    if (S.sel.key !== selectedKey) return;
 
     if (kecFC && kecFC.features && kecFC.features.length > 0) {
       fitProjection(kecFC);
@@ -559,7 +717,7 @@ async function drawGeo() {
           .attr('fill', d => { const n = kabNodeFor(d, P); return n ? colorOf(n) : '#c9c5c5'; })
           .style('pointer-events', 'auto')
           .on('click', (e, d) => { const n = kabNodeFor(d, P); if (n) select(n); })
-          .on('mousemove', (e, d) => { const n = kabNodeFor(d, P); if (n) tipShow(e, P); else tipHide(); })
+          .on('mousemove', (e, d) => { const n = kabNodeFor(d, P); if (n) tipShow(e, n); else tipHide(); })
           .on('mouseleave', tipHide);
       }
     }
@@ -569,9 +727,11 @@ async function drawGeo() {
     gProv.selectAll('path').remove();
     gKab.selectAll('path').remove();
     gKec.selectAll('path').remove();
+    gDesa.selectAll('path').remove();
 
     const kecNode = ancestorAt(S.sel, 3);
     const desaFC = await loadDesaGIS(kecNode);
+    if (S.sel.key !== selectedKey) return;
 
     if (desaFC && desaFC.features && desaFC.features.length > 0) {
       fitProjection(desaFC);
@@ -620,9 +780,25 @@ async function loadKab(P) {
   const folder = ATLAS[P.name]; if (!folder) { S.geoKab[P.key] = null; return null; }
   try {
     const url = GH + 'kabupaten-kota/' + encodeURIComponent(folder) + '/' + slug(folder) + '-simplified-topo.json';
-    const topo = await (await fetch(url)).json();
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const topo = await response.json();
     const key = Object.keys(topo.objects)[0];
-    S.geoKab[P.key] = topojson.feature(topo, topo.objects[key]);
+    const fc = topojson.feature(topo, topo.objects[key]);
+
+    for (const extra of ATLAS_EXTRAS[folder] || []) {
+      try {
+        const extraResponse = await fetch(GH + 'kabupaten-kota/' + encodeURIComponent(folder) + '/' + extra);
+        if (!extraResponse.ok) continue;
+        const extraTopo = await extraResponse.json();
+        const extraKey = Object.keys(extraTopo.objects)[0];
+        const extraFC = topojson.feature(extraTopo, extraTopo.objects[extraKey]);
+        fc.features.push(...extraFC.features);
+      } catch (e) { console.warn('gagal memuat geometri tambahan', folder, extra, e); }
+    }
+
+    bindKabGeoCodes(P, fc);
+    S.geoKab[P.key] = fc;
   } catch (e) { console.warn('gagal memuat geometri', P.name, e); S.geoKab[P.key] = null; }
   return S.geoKab[P.key];
 }
@@ -850,13 +1026,18 @@ function exportCSV() {
 }
 
 /* ── orkestrasi ───────────────────────────────────────────────────── */
+let selectVersion = 0;
 async function select(node) {
   if (!node) return;
+  const version = ++selectVersion;
   S.sel = node; showAll = false;
   const P = ancestorAt(node, 1);
   if (P) await loadKab(P);
+  if (version !== selectVersion) return;
+  if (node.lv >= 3) await loadKecGIS(ancestorAt(node, 2));
+  if (version !== selectVersion) return;
   await renderAll();
-  if (node.lv <= 1) {
+  if (version === selectVersion && node.lv <= 1) {
     zoomToFeature(node.lv === 0 ? null : featureOfProv(node));
   }
 }
@@ -875,10 +1056,6 @@ async function renderAll() {
     const raw = await (await fetch('data/wilayah.json')).json();
     S.root = buildTree(raw);
     S.provByNorm = new Map(S.root.anak.map(p => [norm(p.name), p]));
-    S.root.anak.forEach(p => {
-      p.kabByNorm = new Map(); p.kabByTight = new Map();
-      p.anak.forEach(k => { p.kabByNorm.set(stripKab(k.name), k); p.kabByTight.set(tight(k.name), k); });
-    });
     buildIndex();
     try { S.e2019 = await (await fetch('data/election2019.json')).json(); } catch (e) { console.warn('election2019.json failed', e); }
     try { S.kecIndex = await (await fetch('data/gis/kec_index.json')).json(); } catch (e) { S.kecIndex = {}; }

@@ -112,10 +112,10 @@ Karena sebagian wilayah diimputasi, agregat nasional dan wilayah yang tidak memp
 
 ### Geometri peta
 
-- Provinsi dan kabupaten/kota diunduh saat runtime dari repositori `ghapsara/indonesia-atlas` melalui jsDelivr.
+- Provinsi dan kabupaten/kota diunduh saat runtime dari commit terpin repositori `ghapsara/indonesia-atlas` melalui jsDelivr. Pemetaan kabupaten/kota memakai field `kabkot`, tipe administratif dari ID BPS, dan alias ID untuk beberapa atribut atlas yang keliru/bernama lama.
 - Kecamatan dimuat dari potongan GeoJSON `data/gis/kec/*.json`.
 - Desa dimuat dari potongan GeoJSON `data/gis/desa/*.json`.
-- `data/gis/kec_index.json` memetakan 398 nama kabupaten/kota KPU ke kode berkas GIS.
+- `data/gis/kec_index.json` memetakan 452 key `provinsi|kabupaten/kota` KPU ke kode berkas GIS. Key mempertahankan awalan `KOTA` dan pencarian kode dibatasi ke prefix provinsi shapefile yang sesuai agar nama wilayah yang berulang tidak bertabrakan.
 - `data/gis/kecamatan.json` adalah kumpulan geometri monolitik lama dan saat ini tidak dibaca oleh `app.js`.
 
 Folder `data/gis/kec/`, `data/gis/desa/`, dan `data/gis/prov/` diabaikan oleh Git karena ukurannya besar. Working tree yang diaudit memiliki hasil generasi lokal di folder kecamatan dan desa, tetapi folder tersebut tidak akan tersedia pada clone baru. Tanpa potongan GIS tersebut, panel, pencarian, tabel, dan data wilayah tetap dapat digunakan, sedangkan geometri tingkat kecamatan/desa tidak tersedia.
@@ -130,7 +130,7 @@ Folder `data/gis/kec/`, `data/gis/desa/`, dan `data/gis/prov/` diabaikan oleh Gi
 | `_ds/.../styles.css` | Design system dan gaya dasar yang digunakan halaman |
 | `data/wilayah.json` | Hierarki wilayah dan agregat basis Pilpres/DPT/TPS |
 | `data/election2019.json` | Perolehan DPR RI 2019 yang tersedia per nama kecamatan |
-| `data/gis/kec_index.json` | Indeks nama kabupaten/kota ke potongan GIS kecamatan |
+| `data/gis/kec_index.json` | Indeks region-aware `provinsi|kabupaten/kota` ke potongan GIS kecamatan |
 | `data/gis/kecamatan.json` | Dataset GIS monolitik lama yang tidak digunakan loader saat ini |
 | `src/dataprov.csv` | Daftar provinsi dari hasil scraping |
 | `src/dataprov-kec.csv` | Hierarki provinsi, kabupaten/kota, dan kecamatan |
@@ -139,6 +139,7 @@ Folder `data/gis/kec/`, `data/gis/desa/`, dan `data/gis/prov/` diabaikan oleh Gi
 | `build_gis_data.py` | Memecah shapefile kecamatan/desa menjadi potongan GeoJSON |
 | `build_kec_index.py` | Membangun indeks potongan GIS kecamatan |
 | `inspect_shp.py` | Utilitas untuk memeriksa field dan contoh record shapefile |
+| `tests/geo_mapping.test.js` | Regresi resolver kabupaten/kota, kecamatan, dan kontrak indeks GIS |
 
 ## Membangun ulang data (opsional)
 
@@ -188,11 +189,21 @@ Data di `src/pilpres/` saja belum cukup untuk mereproduksi JSON yang saat ini te
 
 Hasil konversi disimpan ke `data/gis/kec/` dan `data/gis/desa/`. Keduanya sengaja tidak dicatat oleh Git.
 
+### Menjalankan regresi pemetaan
+
+Jalankan validasi resolver dan indeks wilayah dengan Node.js:
+
+```powershell
+node tests/geo_mapping.test.js
+```
+
 ## Keterbatasan yang diketahui
 
 - Belum ada pipeline data resmi Pemilu 2024 di repository ini.
 - Masih ada teks lama tentang 2024 pada banner analisis, komentar kode, perbandingan, dan nama berkas CSV hasil ekspor. Teks tersebut tidak menandakan bahwa datanya sudah menjadi data resmi 2024.
 - Fungsi grid untuk fallback kecamatan/desa sudah ada di `app.js`, tetapi alur render saat ini selalu menyembunyikannya. Pada clone tanpa potongan GIS, area peta tingkat bawah dapat kosong walaupun panel dan tabel tetap bekerja.
+- Atlas terpin belum memiliki empat kabupaten hasil pemekaran di Sulawesi Tenggara: Buton Selatan, Buton Tengah, Konawe Kepulauan, dan Muna Barat.
+- Sumber SHP lama belum memiliki batas lima kecamatan Gunungkidul: Gedangsari, Girisubo, Purwosari, Saptosari, dan Tanjungsari.
 - Data mentah yang dicatat di `src/` tidak lengkap untuk membangun ulang seluruh output JSON.
 - Geometri dan library frontend bergantung pada layanan CDN, sehingga aplikasi belum mendukung penggunaan offline penuh.
-- Proyek belum memiliki test suite, package manifest, maupun proses validasi data otomatis.
+- Proyek belum memiliki package manifest; regresi pemetaan dijalankan langsung dengan Node.js.

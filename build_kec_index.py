@@ -1,81 +1,147 @@
-import json, os, glob, re
+import glob
+import json
+import os
+import re
 
-def norm(s):
-    return re.sub(r'[^A-Z]+', ' ', s.upper()).strip()
 
-def strip_kab(s):
-    return re.sub(r'^(KABUPATEN|KAB|KOTA ADMINISTRASI|KOTA ADM|KOTA)\s+', '', norm(s)).strip()
+# Shapefile sumber memakai kode wilayah induk/lama untuk sejumlah provinsi
+# hasil pemekaran. Karena itu nilainya berupa satu atau beberapa prefix yang
+# benar-benar tersedia pada data/gis/kec, bukan selalu kode BPS modern.
+SHAPEFILE_PROVINCE_CODES = {
+    "ACEH": ("11",),
+    "SUMATERA UTARA": ("12",),
+    "SUMATERA BARAT": ("13",),
+    "RIAU": ("14",),
+    "JAMBI": ("15",),
+    "SUMATERA SELATAN": ("16",),
+    "BENGKULU": ("17",),
+    "LAMPUNG": ("18",),
+    "KEPULAUAN BANGKA BELITUNG": ("16",),
+    "KEPULAUAN RIAU": ("14",),
+    "DKI JAKARTA": ("31",),
+    "JAWA BARAT": ("32",),
+    "JAWA TENGAH": ("33",),
+    "DAERAH ISTIMEWA YOGYAKARTA": ("34",),
+    "JAWA TIMUR": ("35",),
+    "BANTEN": ("32",),
+    "BALI": ("51",),
+    "NUSA TENGGARA BARAT": ("52",),
+    "NUSA TENGGARA TIMUR": ("53",),
+    "KALIMANTAN BARAT": ("61",),
+    "KALIMANTAN TENGAH": ("62",),
+    "KALIMANTAN SELATAN": ("63",),
+    "KALIMANTAN TIMUR": ("64",),
+    "KALIMANTAN UTARA": ("64",),
+    "SULAWESI UTARA": ("71",),
+    "SULAWESI TENGAH": ("72",),
+    "SULAWESI SELATAN": ("73",),
+    "SULAWESI TENGGARA": ("74",),
+    "GORONTALO": ("71",),
+    "SULAWESI BARAT": ("73",),
+    "MALUKU": ("81",),
+    "MALUKU UTARA": ("81",),
+    "PAPUA BARAT": ("82",),
+    "PAPUA": ("82", "85"),
+}
 
-# For each BPS kec file, extract kecamatan names
+
+def norm(value):
+    return re.sub(r"[^A-Z]+", " ", str(value).upper()).strip()
+
+
+def norm_kec(value):
+    return re.sub(r"^(KECAMATAN|KEC)\s+", "", norm(value)).strip()
+
+
+def region_norm(value):
+    """Samakan normalisasi key dengan fungsi norm() pada app.js."""
+    value = re.sub(
+        r"DAERAH ISTIMEWA|DAERAH KHUSUS IBUKOTA|PROVINSI|^DKI |^DI ",
+        " ",
+        str(value).upper(),
+    )
+    return re.sub(r"[^A-Z]+", " ", value).strip()
+
+
+def region_key(province_name, regency_name):
+    # Nama kabupaten dipertahankan utuh, termasuk awalan KOTA, agar pasangan
+    # seperti BANDUNG dan KOTA BANDUNG tidak bertabrakan.
+    return f"{region_norm(province_name)}|{region_norm(regency_name)}"
+
+
+# Untuk setiap file kode BPS, ambil himpunan nama kecamatannya.
 bps_info = {}
-for f in sorted(glob.glob('data/gis/kec/[0-9]*.json')):
-    code = os.path.basename(f).replace('.json','')
-    if len(code) > 4:
+for path in sorted(glob.glob("data/gis/kec/[0-9]*.json")):
+    code = os.path.splitext(os.path.basename(path))[0]
+    if not re.fullmatch(r"\d{4}", code):
         continue
-    with open(f, 'r') as fh:
-        d = json.load(fh)
-    kec_names = set()
-    for feat in d['features']:
-        kn = norm(feat['properties'].get('name', ''))
-        if kn:
-            kec_names.add(kn)
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    kec_names = {
+        norm_kec(feature.get("properties", {}).get("name", ""))
+        for feature in data.get("features", [])
+    }
+    kec_names.discard("")
     bps_info[code] = kec_names
 
-print(f'{len(bps_info)} BPS kab codes in kec chunks')
+print(f"{len(bps_info)} BPS kab codes in kec chunks")
 
-# Load wilayah
-with open('data/wilayah.json', 'r', encoding='utf-8') as f:
-    wil = json.load(f)
+with open("data/wilayah.json", "r", encoding="utf-8") as handle:
+    wilayah = json.load(handle)
 
-# For each KPU kabupaten, find the BPS code with highest overlap ratio
-# Allow multiple KPU kab to map to same BPS code (pemekaran)
+# Cari potongan GIS dengan irisan nama kecamatan terbesar, tetapi hanya di
+# provinsi yang sama. Beberapa daerah pemekaran memang dapat memakai satu
+# potongan lama yang sama; key region-aware tetap membuat pilihannya eksplisit.
 index = {}
 matched = 0
-for prov in wil['prov']:
-    for kab in prov['kab']:
-        kab_norm = strip_kab(kab['n'])
-        kec_names_kpu = set(norm(c['n']) for c in kab['kec'])
-        if not kec_names_kpu:
+domestic_total = 0
+for province in wilayah["prov"]:
+    province_name = province["n"].lstrip("+ ").upper()
+    province_codes = SHAPEFILE_PROVINCE_CODES.get(province_name)
+    if not province_codes:
+        continue
+
+    for regency in province["kab"]:
+        domestic_total += 1
+        kpu_names = {norm_kec(kec["n"]) for kec in regency["kec"]}
+        if not kpu_names:
             continue
 
         best_code = None
         best_overlap = 0
         best_ratio = 0
         for bps_code, gis_names in bps_info.items():
-            overlap = len(kec_names_kpu & gis_names)
-            if overlap == 0:
+            if not bps_code.startswith(province_codes):
                 continue
-            # Ratio = how many KPU kecamatan found in this GIS file
-            ratio = overlap / len(kec_names_kpu)
+            overlap = len(kpu_names & gis_names)
+            if not overlap:
+                continue
+            ratio = overlap / len(kpu_names)
             if ratio > best_ratio or (ratio == best_ratio and overlap > best_overlap):
                 best_ratio = ratio
                 best_overlap = overlap
                 best_code = bps_code
 
         if best_code and best_overlap >= 2:
-            index[kab_norm] = best_code
+            index[region_key(province_name, regency["n"])] = best_code
             matched += 1
 
-print(f'Matched {matched} kabupaten')
+print(f"Matched {matched}/{domestic_total} domestic kabupaten/kota")
 
-# Verify
-verify = ['ACEH BARAT', 'ACEH BARAT DAYA', 'ACEH SINGKIL', 'BANDUNG', 'JAKARTA PUSAT',
-          'SURABAYA', 'SEMARANG', 'BOGOR', 'MALANG', 'SURAKARTA']
-for name in verify:
-    code = index.get(name, 'NOT FOUND')
-    if code != 'NOT FOUND':
-        gis_names = bps_info[code]
-        # Find the kab in wilayah
-        for prov in wil['prov']:
-            for kab in prov['kab']:
-                if strip_kab(kab['n']) == name:
-                    kpu_names = set(norm(c['n']) for c in kab['kec'])
-                    overlap = len(kpu_names & gis_names)
-                    print(f'  {name} -> {code} ({overlap}/{len(kpu_names)} kec matched)')
-                    break
-    else:
-        print(f'  {name} -> NOT FOUND')
+verify = [
+    ("DAERAH ISTIMEWA YOGYAKARTA", "BANTUL"),
+    ("DAERAH ISTIMEWA YOGYAKARTA", "GUNUNGKIDUL"),
+    ("DAERAH ISTIMEWA YOGYAKARTA", "KOTA YOGYAKARTA"),
+    ("DAERAH ISTIMEWA YOGYAKARTA", "KULON PROGO"),
+    ("DAERAH ISTIMEWA YOGYAKARTA", "SLEMAN"),
+    ("JAWA BARAT", "BANDUNG"),
+    ("JAWA BARAT", "KOTA BANDUNG"),
+]
+for province_name, regency_name in verify:
+    key = region_key(province_name, regency_name)
+    print(f"  {key} -> {index.get(key, 'NOT FOUND')}")
 
-with open('data/gis/kec_index.json', 'w') as f:
-    json.dump(index, f, ensure_ascii=False)
-print(f'Saved data/gis/kec_index.json ({len(index)} entries)')
+with open("data/gis/kec_index.json", "w", encoding="utf-8") as handle:
+    json.dump(index, handle, ensure_ascii=False, sort_keys=True)
+    handle.write("\n")
+print(f"Saved data/gis/kec_index.json ({len(index)} entries)")
