@@ -86,7 +86,7 @@ Hasil ini adalah rekonstruksi batas yang selaras secara historis, bukan klaim sn
 | Kecamatan | 7.201 | 7.201 | 100% |
 | Desa/kelurahan | 81.046 | 83.398 | 97,18% |
 
-Sebanyak 1.034 desa fallback dijembatani kembali ke geometri Kemendagri berbasis 2017/2020 melalui kode unik. Hanya 185 fitur mempertahankan polygon BIG: 131 dari ekstrak Maret 2020 dan 54 dari Mei 2023. Dari seluruhnya, 178 memiliki UUPP paling lambat 2019 dan tujuh tidak mencantumkan tahun; tidak ada UUPP pasca-2019. Enam belas baris sumber Maret 2020 dengan UUPP pasca-2019 dibuang sebelum pencocokan. Sebanyak 2.352 desa/kelurahan tanpa poligon aman tetap tersedia dalam grid/tabel. Tidak ada fuzzy matching. Asal, fallback, crosswalk, metode kecocokan, CRS, bbox, perbaikan geometri, dan seluruh key tanpa geometri dicatat dalam `data/gis/audit2019.json`.
+Sebanyak 1.034 desa fallback dijembatani kembali ke geometri Kemendagri berbasis 2017/2020 melalui kode unik. Hanya 185 fitur mempertahankan polygon BIG: 131 dari ekstrak Maret 2020 dan 54 dari Mei 2023. Dari seluruhnya, 178 memiliki UUPP paling lambat 2019 dan tujuh tidak mencantumkan tahun; tidak ada UUPP pasca-2019. Enam belas baris sumber Maret 2020 dengan UUPP pasca-2019 dibuang sebelum pencocokan. Sebanyak 2.352 desa/kelurahan tanpa poligon aman tetap tersedia melalui tabel, pencarian, panel, dan ekspor; grid menggantikan peta bila seluruh anak pada tingkat aktif tidak mempunyai geometri. Tidak ada fuzzy matching. Asal, fallback, crosswalk, metode kecocokan, CRS, bbox, perbaikan geometri, dan seluruh key tanpa geometri dicatat dalam `data/gis/audit2019.json`.
 
 Folder sumber SHP dan potongan GeoJSON besar diabaikan Git. Clone baru perlu menjalankan build GIS atau menerima salinan artefak hasil build. Jika `provinsi.json` atau chunk wilayah gagal dimuat, aplikasi tetap menampilkan hasil melalui grid, panel, dan tabel.
 
@@ -137,16 +137,18 @@ Pipeline GIS membangun potongan berdasarkan key hierarki 2019 melalui area stagi
 
 ## Validasi
 
-Jalankan empat pemeriksaan berikut setelah build:
+Jalankan enam pemeriksaan berikut setelah build:
 
 ```powershell
 node --check app.js
 node tests/geo_mapping.test.js
 python tests/test_data_integrity.py
 python tests/test_gis_integrity.py
+python tests/test_gis_install_transaction.py
+python tests/test_http_smoke.py
 ```
 
-Pemeriksaan hasil memuat seluruh 35 chunk provinsi, memastikan rollup desa sama persis dengan agregat kecamatan, memverifikasi 1.954 berkas sumber beserta hash bila folder scrape tersedia, dan menguji kontes yang benar-benar hilang. Pemeriksaan GIS memuat 7.750 GeoJSON, memverifikasi seluruh key/parent, hash pohon keluaran, validitas 88.795 geometri, komposisi vintage polygon BIG, dan kesamaan daftar key tanpa geometri. Regresi Node memeriksa schema, urutan partai, rollup, resolver key GIS, data kosong, hasil seri, dan ketiadaan jalur sintetis/atlas lama.
+Pemeriksaan hasil memuat seluruh 35 chunk provinsi, memastikan rollup desa sama persis dengan agregat kecamatan, memverifikasi 1.954 berkas sumber beserta hash bila folder scrape tersedia, dan menguji kontes yang benar-benar hilang. Pemeriksaan GIS memuat 7.750 GeoJSON, memverifikasi seluruh key/parent, hash pohon keluaran, validitas 88.795 geometri, komposisi vintage polygon BIG, dan kesamaan daftar key tanpa geometri. Regresi transaksi menyimulasikan pemasangan sukses serta kegagalan satu berkas dan memastikan rollback utuh. Smoke test menyajikan aplikasi lewat HTTP lokal dan membuka entry, chunk hasil, serta GeoJSON. Regresi Node memeriksa schema, urutan partai, rollup, resolver key GIS, data kosong, hasil seri, dan ketiadaan jalur sintetis/atlas lama.
 
 ## Struktur proyek
 
@@ -161,6 +163,8 @@ Pemeriksaan hasil memuat seluruh 35 chunk provinsi, memastikan rollup desa sama 
 | `tests/geo_mapping.test.js` | Regresi kontrak frontend/data/GIS |
 | `tests/test_data_integrity.py` | Verifikasi seluruh artefak hasil dan audit CSV |
 | `tests/test_gis_integrity.py` | Verifikasi seluruh chunk, key, parent, geometri, dan audit GIS |
+| `tests/test_gis_install_transaction.py` | Simulasi commit dan rollback installer GIS |
+| `tests/test_http_smoke.py` | Smoke test penyajian aplikasi dan data melalui HTTP lokal |
 | `SHP GIS/` | Koleksi sumber geospasial lokal; diabaikan Git |
 | `data/` | Artefak hierarki, hasil, audit, dan GeoJSON yang dikonsumsi aplikasi |
 

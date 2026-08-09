@@ -4,7 +4,8 @@ The source collection does not contain one authoritative polygon snapshot for
 17 April 2019.  This builder therefore uses the KPU election hierarchy as the
 identity spine and selects geometry conservatively, in this order:
 
-* Kemendagri 2018 semester-I province/regency/district archives;
+* Kemendagri 2018 semester-I regency/district archives, with provinces
+  dissolved from their 2019 regency children;
 * Kemendagri 2020 semester-I village GeoPackage (2017 spatial base joined to
   2020 names);
 * June 2023 repository regency/district shapefiles only for unresolved targets;
@@ -39,6 +40,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import unicodedata
 import uuid
 import zipfile
@@ -58,7 +60,6 @@ DEFAULT_HIERARCHY = PROJECT_DIR / "data" / "wilayah.json"
 DEFAULT_OUTPUT_DIR = PROJECT_DIR / "data" / "gis"
 
 HISTORIC_ROOT = Path("batas-administrasi-indonesia") / "2020"
-HISTORIC_PROV_ZIP = HISTORIC_ROOT / "batas_provinsi" / "Batas Provinsi SHP.zip"
 HISTORIC_KAB_ZIP = HISTORIC_ROOT / "Batas Kabupaten SHP.zip"
 HISTORIC_KEC_ZIP = HISTORIC_ROOT / "Batas Kecamatan SHP.zip"
 HISTORIC_DESA_PARTS = (
@@ -372,7 +373,6 @@ def only_file(directory: Path, pattern: str) -> Path:
 
 def prepare_sources(source_root: Path, temporary: Path) -> dict[str, VectorSource]:
     paths = {
-        "prov_zip": source_root / HISTORIC_PROV_ZIP,
         "kab_zip": source_root / HISTORIC_KAB_ZIP,
         "kec_zip": source_root / HISTORIC_KEC_ZIP,
         "modern_kab": source_root / MODERN_KAB_SHP,
@@ -1301,44 +1301,160 @@ def tree_metrics(stage: Path) -> dict[str, Any]:
 
 
 def install_transaction(stage: Path, output: Path) -> None:
+    """Install a staged build without renaming live output directories.
+
+    Windows keeps directory handles open while Explorer, an editor, or the
+    development web server is browsing a directory.  Renaming ``kab``/``kec``
+    /``desa`` therefore fails even though replacing their individual JSON
+    files is safe.  Keep the public directories in place, replace each file
+    atomically, and retain enough state to roll every replacement back if any
+    one file is locked.
+    """
     output.mkdir(parents=True, exist_ok=True)
     build_root = output / "_build"
-    transaction = build_root / f"backup-{uuid.uuid4().hex}"
-    transaction.mkdir(parents=True)
     directory_names = ("kab", "kec", "desa")
     file_names = ("provinsi.json", "audit2019.json")
     obsolete_names = ("prov", "kecamatan.json", "kec_index.json")
-    moved_old: list[tuple[Path, Path]] = []
-    installed: list[Path] = []
+
+    staged_files = {
+        path.relative_to(stage)
+        for path in stage.rglob("*")
+        if path.is_file()
+    }
+    expected_roots = {*directory_names, *file_names}
+    unexpected = sorted(
+        rel.as_posix()
+        for rel in staged_files
+        if rel.parts[0] not in expected_roots or rel.suffix.lower() != ".json"
+    )
+    if unexpected:
+        raise RuntimeError(f"Unexpected staged output files: {unexpected[:5]}")
+    for name in file_names:
+        if Path(name) not in staged_files:
+            raise RuntimeError(f"Missing staged output file: {name}")
+
+    transaction = build_root / f"backup-{uuid.uuid4().hex}"
+    transaction.mkdir(parents=True)
+    backup_root = transaction / "files"
+
+    # Publish leaf collections before their parents. audit2019.json is the
+    # commit marker and must be replaced last.
+    install_priority = {"desa": 0, "kec": 1, "kab": 2, "provinsi.json": 3}
+    install_order = sorted(
+        (rel for rel in staged_files if rel != Path("audit2019.json")),
+        key=lambda rel: (install_priority[rel.parts[0]], rel.as_posix()),
+    )
+    installed: list[tuple[Path, Path | None]] = []
+    removed: list[tuple[Path, Path]] = []
+    success = False
+    rollback_complete = False
+
+    def atomic_copy_replace(source: Path, target: Path) -> None:
+        """Copy through a sibling so the published file inherits live ACLs."""
+        temporary = target.with_name(f".{target.name}.install-{uuid.uuid4().hex}.tmp")
+        try:
+            with source.open("rb") as reader, temporary.open("xb") as writer:
+                shutil.copyfileobj(reader, writer, length=1024 * 1024)
+                writer.flush()
+                os.fsync(writer.fileno())
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def install_file(rel: Path) -> None:
+        source = stage / rel
+        target = output / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        backup: Path | None = None
+        if target.exists():
+            if not target.is_file():
+                raise RuntimeError(f"Output target is not a file: {target}")
+            backup = backup_root / "replaced" / rel
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(target, backup)
+        atomic_copy_replace(source, target)
+        installed.append((target, backup))
+
     try:
-        for name in (*directory_names, *obsolete_names, *file_names):
-            target = output / name
-            if target.exists():
-                backup = transaction / name
-                backup.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(target, backup)
-                moved_old.append((target, backup))
+        for rel in install_order:
+            install_file(rel)
+
+        desired = staged_files
+        stale_targets: list[Path] = []
         for name in directory_names:
-            target = output / name
-            os.replace(stage / name, target)
-            installed.append(target)
-        for name in file_names:
-            target = output / name
-            os.replace(stage / name, target)
-            installed.append(target)
-    except Exception:
-        for target in reversed(installed):
-            if target.is_dir():
-                shutil.rmtree(target)
-            elif target.exists():
-                target.unlink()
-        for target, backup in reversed(moved_old):
-            if backup.exists():
-                os.replace(backup, target)
+            live_directory = output / name
+            if live_directory.exists():
+                stale_targets.extend(
+                    path
+                    for path in live_directory.rglob("*")
+                    if path.is_file() and path.relative_to(output) not in desired
+                )
+        for name in obsolete_names:
+            obsolete = output / name
+            if obsolete.is_file():
+                stale_targets.append(obsolete)
+            elif obsolete.is_dir():
+                stale_targets.extend(path for path in obsolete.rglob("*") if path.is_file())
+
+        for target in sorted(stale_targets, key=lambda path: path.as_posix()):
+            rel = target.relative_to(output)
+            backup = backup_root / "removed" / rel
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(target, backup)
+            removed.append((target, backup))
+
+        # Remove now-empty obsolete directories from the leaves upward.  The
+        # three live data directories are intentionally retained.
+        for name in obsolete_names:
+            obsolete = output / name
+            if not obsolete.is_dir():
+                continue
+            directories = [path for path in obsolete.rglob("*") if path.is_dir()]
+            for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True):
+                directory.rmdir()
+            obsolete.rmdir()
+
+        install_file(Path("audit2019.json"))
+        success = True
+    except Exception as install_error:
+        rollback_errors: list[str] = []
+        for target, backup in reversed(installed):
+            try:
+                if backup is not None and backup.exists():
+                    atomic_copy_replace(backup, target)
+                else:
+                    target.unlink(missing_ok=True)
+            except Exception as error:  # pragma: no cover - catastrophic OS lock
+                rollback_errors.append(f"{target}: {error}")
+        for target, backup in reversed(removed):
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if backup.exists():
+                    atomic_copy_replace(backup, target)
+            except Exception as error:  # pragma: no cover - catastrophic OS lock
+                rollback_errors.append(f"{target}: {error}")
+        rollback_complete = not rollback_errors
+        if rollback_errors:
+            raise RuntimeError(
+                "GIS installation failed and rollback was incomplete; backups "
+                f"remain at {transaction}: {rollback_errors[:3]}"
+            ) from install_error
         raise
     finally:
-        if transaction.exists():
-            shutil.rmtree(transaction)
+        if transaction.exists() and (success or rollback_complete):
+            # Cleanup happens after the audit commit marker is public.  A
+            # transient antivirus/indexer lock must not turn a committed build
+            # into a false failure and trigger a retry with missing stage data.
+            safe_marker = build_root / f".{transaction.name}.safe-to-delete"
+            try:
+                safe_marker.write_text("committed-or-rolled-back\n", encoding="ascii")
+                shutil.rmtree(transaction)
+                safe_marker.unlink(missing_ok=True)
+            except OSError as error:
+                print(
+                    f"Warning: safe transaction cleanup deferred: {transaction} ({error})",
+                    flush=True,
+                )
 
 
 def build(
@@ -1360,12 +1476,28 @@ def build(
     build_root.mkdir(parents=True, exist_ok=True)
     # A killed build can leave extracted multi-gigabyte sources behind.  Only
     # remove directories created by this builder and only inside _build.
-    for stale in build_root.iterdir():
+    for stale in list(build_root.iterdir()):
+        if stale.is_file() and stale.name.startswith(".backup-") and stale.name.endswith(
+            ".safe-to-delete"
+        ):
+            transaction_name = stale.name[1 : -len(".safe-to-delete")]
+            if not (build_root / transaction_name).exists():
+                stale.unlink()
+            continue
         if not stale.is_dir() or not stale.name.startswith(("sources-", "stage-", "backup-")):
             continue
         if stale.resolve().parent != build_root.resolve():
             raise RuntimeError(f"Refusing to clean unsafe build path: {stale}")
+        if stale.name.startswith("backup-"):
+            safe_marker = build_root / f".{stale.name}.safe-to-delete"
+            if not safe_marker.is_file():
+                raise RuntimeError(
+                    "Unresolved GIS installation backup requires manual review: "
+                    f"{stale}"
+                )
         shutil.rmtree(stale)
+        if stale.name.startswith("backup-"):
+            safe_marker.unlink(missing_ok=True)
     with tempfile.TemporaryDirectory(prefix="sources-", dir=build_root) as temporary_name:
         sources = prepare_sources(source_root, Path(temporary_name))
         spatial_sources = inspect_spatial_sources(sources)
@@ -1419,14 +1551,14 @@ def build(
                 "identity_spine": "KPU 2019 hierarchy from data/wilayah.json",
                 "claim": "historically aligned reconstruction; not a single official election-day snapshot",
                 "source_priority": [
-                    "Kemendagri 2018 semester I province/regency/district",
+                    "Kemendagri 2018 semester I regency/district; provinces dissolved from regencies",
                     "Kemendagri 2020 semester I village GPKG",
                     "strict official-code bridge from modern identity to 2017/2020 village geometry",
                     "June 2023 repository regency/district shapefiles as unmatched-only fallback",
                     "March 2020 BIG village polygons, source rows with UUPP >2019 dropped",
                     "May 2023 BIG village polygons only with UUPP <=2019 or unknown",
                 ],
-                "allowed_match_methods": [
+                "match_method_rules": [
                     "exact",
                     "documented_alias",
                     "compact_unique",
@@ -1435,7 +1567,13 @@ def build(
                 ],
                 "fuzzy_matching": False,
                 "output_crs": "EPSG:4326 (all sources asserted before build)",
+                "province_geometry": "dissolved from matched 2019 regency children",
                 "overseas": "130 +Luar Negeri units are intentionally non-spatial",
+            },
+            "identity_spine_input": {
+                "path": str(hierarchy_path.resolve()),
+                "bytes": hierarchy_path.stat().st_size,
+                "sha256": sha256_file(hierarchy_path),
             },
             "hierarchy": {
                 "provinces": len(hierarchy.provinces),
@@ -1477,7 +1615,20 @@ def build(
             audit["source_files"] = source_inventory(source_root, sources)
             audit["outputs"] = tree_metrics(stage)
             write_json(stage / "audit2019.json", audit)
-            install_transaction(stage, output)
+            for attempt in range(6):
+                try:
+                    install_transaction(stage, output)
+                    break
+                except PermissionError:
+                    if attempt == 5:
+                        raise
+                    delay = 2 * (attempt + 1)
+                    print(
+                        f"Output directory is temporarily locked; retrying "
+                        f"transaction in {delay}s ...",
+                        flush=True,
+                    )
+                    time.sleep(delay)
         finally:
             if stage.exists():
                 shutil.rmtree(stage)

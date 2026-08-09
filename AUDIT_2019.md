@@ -96,8 +96,9 @@ Hierarki KPU pada CSV menjadi spine dan sumber `properties.key` seluruh
 GeoJSON. Sumber geometri dipilih menurut kedekatan waktunya dengan Pemilu 2019,
 bukan semata-mata menurut tanggal file terbaru:
 
-1. arsip Kemendagri semester I 2018 untuk provinsi, kabupaten/kota, dan
-   kecamatan;
+1. arsip Kemendagri semester I 2018 untuk kabupaten/kota dan kecamatan;
+   batas provinsi diturunkan dari union seluruh kabupaten/kota anak pada
+   hierarki KPU 2019;
 2. GPKG Kemendagri semester I 2020 untuk desa/kelurahan;
 3. code bridge resmi yang unik dari identitas layer BIG kembali ke geometri
    desa berbasis 2017/2020 dalam kabupaten KPU yang sama;
@@ -135,8 +136,10 @@ dan didominasi ekstrak yang lebih tua:
 | BIG 26 Maret 2020 | 131 | 130 | 1 | 0 |
 | BIG 28 Mei 2023 | 54 | 48 | 6 | 0 |
 
-Pipeline tidak memakai edit distance atau fuzzy matching; ketidakpastian tetap
-menjadi grid nonspasial. Seluruh 29 berkas sumber terpilih (2.759.675.829 byte)
+Pipeline tidak memakai edit distance atau fuzzy matching; node tanpa geometri
+tetap tersedia melalui tabel, pencarian, panel, dan ekspor, sedangkan grid
+nonspasial menggantikan peta bila seluruh anak aktif tidak memiliki poligon.
+Seluruh 29 berkas sumber terpilih (2.759.675.829 byte)
 direkam dengan SHA-256. Build memasang 7.750 berkas GeoJSON secara
 transaksional dengan kontrak EPSG:4326, bbox nasional, hasil validasi setiap
 geometri, dan hash pohon keluaran di audit.
@@ -159,8 +162,11 @@ kelalaian:
 .\.venv\Scripts\python.exe build_gis_data.py
 .\.venv\Scripts\python.exe tests\test_data_integrity.py
 .\.venv\Scripts\python.exe tests\test_gis_integrity.py
+.\.venv\Scripts\python.exe tests\test_gis_install_transaction.py
+.\.venv\Scripts\python.exe tests\test_http_smoke.py
 node tests\geo_mapping.test.js
 ```
 
-Keluaran data dibangun atomik agar kegagalan di tengah proses tidak
-meninggalkan campuran potongan lama dan baru.
+Keluaran data dibangun melalui staging; installer GIS mengganti setiap berkas
+secara atomik, menerbitkan audit sebagai penanda commit terakhir, dan
+memulihkan seluruh berkas lama bila satu penggantian gagal.

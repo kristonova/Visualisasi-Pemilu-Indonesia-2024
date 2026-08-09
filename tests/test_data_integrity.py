@@ -163,6 +163,12 @@ def main() -> None:
     assert len(audit["support_files"]) == 7
     assert len({item["path"] for item in audit["support_files"]}) == 7
 
+    for output_name in ("wilayah.json", "election2019.json"):
+        output_path = DATA / output_name
+        output_audit = audit["outputs"][output_name]
+        assert output_path.stat().st_size == output_audit["bytes"]
+        assert sha256_file(output_path) == output_audit["sha256"]
+
     # When the original scrape is available, independently reconcile every
     # physical CSV against the builder inventory instead of trusting only the
     # hashes embedded in the generated audit.
@@ -207,6 +213,9 @@ def main() -> None:
 
     chunk_paths = sorted((DATA / "election2019").glob("P*.json"))
     assert len(chunk_paths) == 35
+    assert sum(path.stat().st_size for path in chunk_paths) == audit["outputs"][
+        "province_chunks"
+    ]["bytes"]
     seen_leaf_keys = set()
     district_rollup = {}
     for path in chunk_paths:

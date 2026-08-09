@@ -282,6 +282,12 @@ def main() -> None:
 
     audit = load_json(GIS / "audit2019.json")
     assert audit.get("schema") == 1
+    identity_spine = audit.get("identity_spine_input", {})
+    hierarchy_path = DATA / "wilayah.json"
+    assert identity_spine.get("bytes") == hierarchy_path.stat().st_size
+    assert identity_spine.get("sha256") == hashlib.sha256(
+        hierarchy_path.read_bytes()
+    ).hexdigest()
     assert audit.get("hierarchy") == {
         "provinces": 34,
         "regencies": 514,
@@ -296,6 +302,10 @@ def main() -> None:
     assert all(
         str(item.get("geometry_type", "")).startswith(("Polygon", "MultiPolygon"))
         for item in source_features.values()
+    )
+    assert not any(
+        item.get("path", "").endswith("Batas Provinsi SHP.zip")
+        for item in audit.get("source_files", [])
     )
     spatial_contract = geometry_audit.get("spatial_contract", {})
     assert spatial_contract.get("crs") == "EPSG:4326"
