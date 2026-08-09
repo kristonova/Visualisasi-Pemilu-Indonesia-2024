@@ -2,6 +2,10 @@
 
 Aplikasi web statis untuk menjelajahi hasil Pemilu Indonesia 2019 dari tingkat nasional hingga kelurahan/desa. Seluruh angka yang ditampilkan berasal dari CSV hasil scraping KPU yang tersedia; aplikasi tidak membuat hasil sintetis, tidak mengimputasi wilayah yang tidak tercakup, dan tidak mencocokkan hasil berdasarkan nama wilayah yang ambigu.
 
+**Dashboard live:** [kristonova.github.io/Visualisasi-Pemilu-Indonesia-2024](https://kristonova.github.io/Visualisasi-Pemilu-Indonesia-2024/)
+
+Audit teknis yang lebih rinci tersedia di [`AUDIT_2019.md`](AUDIT_2019.md), [`data/audit2019.json`](data/audit2019.json), dan [`data/gis/audit2019.json`](data/gis/audit2019.json).
+
 Visualisasi memuat empat kontes yang benar-benar tersedia dalam kumpulan sumber:
 
 - Pilpres;
@@ -101,34 +105,36 @@ python -m http.server 8000
 
 Kemudian buka [http://localhost:8000/](http://localhost:8000/). Gunakan `py -m http.server 8000` jika instalasi Windows menyediakan launcher `py` alih-alih perintah `python`.
 
-Data dan GeoJSON disajikan secara lokal. Halaman masih memuat D3 7.9.0 dari CDN, sehingga koneksi internet diperlukan kecuali D3 juga disediakan secara lokal.
+Data, GeoJSON, JavaScript aplikasi, dan stylesheet utama disajikan dari repository. D3 7.9.0 masih dimuat dari unpkg dan merupakan dependensi runtime, sehingga koneksi internet diperlukan kecuali D3 disediakan secara lokal. Font Archivo dimuat dari Google Fonts, tetapi stylesheet dapat memakai fallback font sistem bila layanan font tidak tersedia.
 
 ### Deployment GitHub Pages
 
-Dashboard ini adalah situs statis dan dapat disajikan langsung dari root branch
-`main`. Berkas `.nojekyll` dipertahankan agar GitHub Pages menerbitkan pohon
-statis apa adanya tanpa pemrosesan Jekyll.
+Deployment produksi aktif di GitHub Pages dan disajikan langsung dari root
+branch `main`. Berkas `.nojekyll` dipertahankan agar GitHub Pages menerbitkan
+pohon statis apa adanya tanpa pemrosesan Jekyll.
 
-Data runtime berikut juga harus di-commit karena semuanya dimuat melalui
-`fetch()` oleh browser:
+Repository saat ini sudah melacak data runtime berikut karena semuanya dimuat
+melalui `fetch()` oleh browser:
 
 - `data/election2019/*.json`;
 - `data/gis/kab/*.json`;
 - `data/gis/kec/*.json`; dan
 - `data/gis/desa/*.json`.
 
-Artefak itu berjumlah sekitar 97,8 MiB dan setiap berkas jauh di bawah 100 MiB.
-Jangan commit `.venv/`, `SHP GIS/`, `data/gis/_build/`, atau
+Artefak tersebut terdiri dari 35 chunk hasil, 34 chunk kabupaten/kota, 514
+chunk kecamatan, dan 7.201 chunk desa dengan ukuran total sekitar 97,8 MiB;
+setiap berkas jauh di bawah 100 MiB. Jangan menghapusnya dari Git atau
+memindahkannya ke Git LFS karena GitHub Pages harus menyajikan isi JSON secara
+langsung. Sebaliknya, jangan commit `.venv/`, `SHP GIS/`, `data/gis/_build/`, atau
 `data/gis_broken_*`; semuanya merupakan dependensi lokal, sumber mentah, atau
-staging yang tidak dibutuhkan browser. Git LFS juga tidak boleh dipakai untuk
-JSON runtime karena GitHub Pages harus menyajikan isi JSON, bukan pointer LFS.
+staging yang tidak dibutuhkan browser.
 
 Setelah memastikan seluruh build dan tes lulus, siapkan commit dengan:
 
 ```powershell
 git add -A
 git status --short
-git commit -m "Prepare static dashboard for GitHub Pages"
+git commit -m "Update dashboard and runtime data"
 git push origin main
 ```
 
@@ -147,7 +153,7 @@ py -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-Dependensi build yang dipin adalah `pyogrio`, `pyshp`, dan `shapely`. Frontend tidak membutuhkan bundler atau instalasi paket Node.
+Dependensi build yang dipin adalah `pyogrio`, `pyshp`, dan `shapely`. Frontend tidak membutuhkan bundler atau instalasi paket npm. Node.js hanya diperlukan untuk pemeriksaan sintaks `app.js` dan regresi `geo_mapping.test.js`.
 
 ### Hasil pemilu
 
@@ -182,30 +188,35 @@ python tests/test_gis_install_transaction.py
 python tests/test_http_smoke.py
 ```
 
-Pemeriksaan hasil memuat seluruh 35 chunk provinsi, memastikan rollup desa sama persis dengan agregat kecamatan, memverifikasi 1.954 berkas sumber beserta hash bila folder scrape tersedia, dan menguji kontes yang benar-benar hilang. Pemeriksaan GIS memuat 7.750 GeoJSON, memverifikasi seluruh key/parent, hash pohon keluaran, validitas 88.795 geometri, komposisi vintage polygon BIG, dan kesamaan daftar key tanpa geometri. Regresi transaksi menyimulasikan pemasangan sukses serta kegagalan satu berkas dan memastikan rollback utuh. Smoke test menyajikan aplikasi lewat HTTP lokal dan membuka entry, chunk hasil, serta GeoJSON. Regresi Node memeriksa schema, urutan partai, rollup, resolver key GIS, data kosong, hasil seri, dan ketiadaan jalur sintetis/atlas lama.
+Pemeriksaan hasil memuat seluruh 35 chunk provinsi, memastikan rollup desa sama persis dengan agregat kecamatan, memverifikasi 1.954 berkas sumber beserta hash bila folder scrape tersedia, dan menguji kontes yang benar-benar hilang. Pemeriksaan GIS memuat 7.750 GeoJSON, memverifikasi seluruh key/parent, hash pohon keluaran, validitas 88.795 geometri, komposisi vintage polygon BIG, dan kesamaan daftar key tanpa geometri. Regresi transaksi menyimulasikan pemasangan sukses serta kegagalan satu berkas dan memastikan rollback utuh. Smoke test menyajikan aplikasi lewat HTTP lokal dan membuka entry HTML, stylesheet, metadata serta chunk hasil, dan GeoJSON. Regresi Node memeriksa schema, urutan partai, rollup, resolver key GIS, data kosong, hasil seri, dan ketiadaan jalur sintetis/atlas lama.
 
 ## Struktur proyek
 
 | Path | Peran |
 | --- | --- |
+| `.editorconfig` | Aturan encoding, newline, dan indentasi lintas editor |
+| `.gitattributes` | Penandaan JSON runtime sebagai artefak generated di GitHub |
+| `.gitignore` | Memisahkan sumber/staging lokal dari data runtime yang dilacak |
+| `.nojekyll` | Meminta GitHub Pages menyajikan pohon statis tanpa Jekyll |
 | `index.html` | Entry point utama |
 | `pemilu-2024.html` | Alias entry lama dengan isi Pemilu 2019 yang identik |
 | `app.js` | State, lazy loader, agregasi tampilan, peta D3, interaksi, dan ekspor |
 | `.thumbnail` | Pratinjau visual dashboard untuk metadata proyek |
+| `AUDIT_2019.md` | Ringkasan audit manusia untuk hasil pemilu dan batas wilayah |
 | `assets/modernist/` | Stylesheet dan dokumentasi design system yang dipakai kedua entry HTML |
 | `build_2019_data.py` | Builder dan audit lengkap CSV hasil Pemilu 2019 |
 | `build_gis_data.py` | Pemilihan sumber, penyelarasan key, konversi, dan audit GIS |
 | `requirements.txt` | Dependensi Python build yang dipin |
 | `tools/inspect_shp.py` | Utilitas CLI untuk melihat schema dan contoh record shapefile |
 | `tools/legacy/` | Utilitas loader lama yang tidak menjadi bagian build aktif |
-| `src/` | Sampel CSV lama; bukan sumber audit lengkap |
+| `src/` | Sampel CSV lama beserta penjelasan; bukan sumber audit lengkap |
 | `tests/geo_mapping.test.js` | Regresi kontrak frontend/data/GIS |
 | `tests/test_data_integrity.py` | Verifikasi seluruh artefak hasil dan audit CSV |
 | `tests/test_gis_integrity.py` | Verifikasi seluruh chunk, key, parent, geometri, dan audit GIS |
 | `tests/test_gis_install_transaction.py` | Simulasi commit dan rollback installer GIS |
 | `tests/test_http_smoke.py` | Smoke test penyajian aplikasi dan data melalui HTTP lokal |
 | `SHP GIS/` | Koleksi sumber geospasial lokal; diabaikan Git |
-| `data/` | Artefak hierarki, hasil, audit, dan GeoJSON yang dikonsumsi aplikasi |
+| `data/` | Artefak hierarki, hasil, audit, GeoJSON, dan dokumentasi data runtime |
 
 ## Keterbatasan
 
@@ -214,4 +225,4 @@ Pemeriksaan hasil memuat seluruh 35 chunk provinsi, memastikan rollup desa sama 
 - Tidak ada CSV DPD, sehingga DPD tidak divisualisasikan.
 - CSV adalah hasil scraping KPU dan mengandung nilai serta metadata anomali. `data/audit2019.json` harus dibaca bersama visualisasi; artefak ini bukan pengganti dokumen penetapan resmi KPU.
 - Batas administratif merupakan rekonstruksi multi-sumber yang diselaraskan ke hierarki 2019, bukan satu snapshot resmi tepat pada tanggal pemilu.
-- D3 masih berasal dari CDN; aset data lokal lain tersedia pada clone repository.
+- D3 dan font Archivo masih berasal dari CDN; seluruh aset runtime selain keduanya tersedia pada clone repository.
