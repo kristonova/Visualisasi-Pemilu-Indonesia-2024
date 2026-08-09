@@ -31,6 +31,7 @@ def main() -> None:
     try:
         assert b"app.js" in fetch(base_url, "index.html")
         assert b"data/election2019/" in fetch(base_url, "app.js")
+        assert b"--color-accent" in fetch(base_url, "assets/modernist/styles.css")
 
         election = json.loads(fetch(base_url, "data/election2019.json"))
         assert election["schema"] == 2

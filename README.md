@@ -88,7 +88,7 @@ Hasil ini adalah rekonstruksi batas yang selaras secara historis, bukan klaim sn
 
 Sebanyak 1.034 desa fallback dijembatani kembali ke geometri Kemendagri berbasis 2017/2020 melalui kode unik. Hanya 185 fitur mempertahankan polygon BIG: 131 dari ekstrak Maret 2020 dan 54 dari Mei 2023. Dari seluruhnya, 178 memiliki UUPP paling lambat 2019 dan tujuh tidak mencantumkan tahun; tidak ada UUPP pasca-2019. Enam belas baris sumber Maret 2020 dengan UUPP pasca-2019 dibuang sebelum pencocokan. Sebanyak 2.352 desa/kelurahan tanpa poligon aman tetap tersedia melalui tabel, pencarian, panel, dan ekspor; grid menggantikan peta bila seluruh anak pada tingkat aktif tidak mempunyai geometri. Tidak ada fuzzy matching. Asal, fallback, crosswalk, metode kecocokan, CRS, bbox, perbaikan geometri, dan seluruh key tanpa geometri dicatat dalam `data/gis/audit2019.json`.
 
-Folder sumber SHP dan potongan GeoJSON besar diabaikan Git. Clone baru perlu menjalankan build GIS atau menerima salinan artefak hasil build. Jika `provinsi.json` atau chunk wilayah gagal dimuat, aplikasi tetap menampilkan hasil melalui grid, panel, dan tabel.
+Folder sumber `SHP GIS/` diabaikan Git karena ukurannya besar, sedangkan seluruh potongan GeoJSON runtime di `data/gis/` dilacak agar clone dan GitHub Pages langsung dapat menjalankan dashboard. Jika `provinsi.json` atau chunk wilayah gagal dimuat, aplikasi tetap menampilkan hasil melalui grid, panel, dan tabel.
 
 ## Menjalankan aplikasi
 
@@ -106,8 +106,8 @@ Data dan GeoJSON disajikan secara lokal. Halaman masih memuat D3 7.9.0 dari CDN,
 ### Deployment GitHub Pages
 
 Dashboard ini adalah situs statis dan dapat disajikan langsung dari root branch
-`main`. Berkas `.nojekyll` wajib ikut di repository agar GitHub Pages tidak
-menghapus folder aset `_ds` yang namanya diawali garis bawah.
+`main`. Berkas `.nojekyll` dipertahankan agar GitHub Pages menerbitkan pohon
+statis apa adanya tanpa pemrosesan Jekyll.
 
 Data runtime berikut juga harus di-commit karena semuanya dimuat melalui
 `fetch()` oleh browser:
@@ -126,14 +126,14 @@ JSON runtime karena GitHub Pages harus menyajikan isi JSON, bukan pointer LFS.
 Setelah memastikan seluruh build dan tes lulus, siapkan commit dengan:
 
 ```powershell
-git add .gitignore .nojekyll index.html pemilu-2024.html app.js _ds data README.md AUDIT_2019.md tests
+git add -A
 git status --short
 git commit -m "Prepare static dashboard for GitHub Pages"
 git push origin main
 ```
 
 Kemudian pilih **Settings → Pages → Deploy from a branch**, branch `main`,
-folder `/(root)`. Setelah deploy selesai, pastikan URL CSS `_ds/.../styles.css`,
+folder `/(root)`. Setelah deploy selesai, pastikan URL CSS `assets/modernist/styles.css`,
 `data/election2019/P1.json`, dan `data/gis/kab/P1.json` semuanya mengembalikan
 HTTP 200.
 
@@ -167,7 +167,7 @@ Tempatkan kumpulan sumber pada `SHP GIS/`, kemudian jalankan:
 python build_gis_data.py
 ```
 
-Pipeline GIS membangun potongan berdasarkan key hierarki 2019 melalui area staging sebelum mengganti output akhir. Jangan memakai kembali `build_kec_index.py` atau `data/gis/kec_index.json` sebagai bagian loader baru; keduanya merupakan jalur lama berbasis nama/kode yang tidak menjamin pemetaan eksak.
+Pipeline GIS membangun potongan berdasarkan key hierarki 2019 melalui area staging sebelum mengganti output akhir. Jangan memakai kembali `tools/legacy/build_kec_index.py` atau `data/gis/kec_index.json` sebagai bagian loader baru; keduanya merupakan jalur lama berbasis nama/kode yang tidak menjamin pemetaan eksak.
 
 ## Validasi
 
@@ -191,9 +191,14 @@ Pemeriksaan hasil memuat seluruh 35 chunk provinsi, memastikan rollup desa sama 
 | `index.html` | Entry point utama |
 | `pemilu-2024.html` | Alias entry lama dengan isi Pemilu 2019 yang identik |
 | `app.js` | State, lazy loader, agregasi tampilan, peta D3, interaksi, dan ekspor |
+| `.thumbnail` | Pratinjau visual dashboard untuk metadata proyek |
+| `assets/modernist/` | Stylesheet dan dokumentasi design system yang dipakai kedua entry HTML |
 | `build_2019_data.py` | Builder dan audit lengkap CSV hasil Pemilu 2019 |
 | `build_gis_data.py` | Pemilihan sumber, penyelarasan key, konversi, dan audit GIS |
 | `requirements.txt` | Dependensi Python build yang dipin |
+| `tools/inspect_shp.py` | Utilitas CLI untuk melihat schema dan contoh record shapefile |
+| `tools/legacy/` | Utilitas loader lama yang tidak menjadi bagian build aktif |
+| `src/` | Sampel CSV lama; bukan sumber audit lengkap |
 | `tests/geo_mapping.test.js` | Regresi kontrak frontend/data/GIS |
 | `tests/test_data_integrity.py` | Verifikasi seluruh artefak hasil dan audit CSV |
 | `tests/test_gis_integrity.py` | Verifikasi seluruh chunk, key, parent, geometri, dan audit GIS |
@@ -209,4 +214,4 @@ Pemeriksaan hasil memuat seluruh 35 chunk provinsi, memastikan rollup desa sama 
 - Tidak ada CSV DPD, sehingga DPD tidak divisualisasikan.
 - CSV adalah hasil scraping KPU dan mengandung nilai serta metadata anomali. `data/audit2019.json` harus dibaca bersama visualisasi; artefak ini bukan pengganti dokumen penetapan resmi KPU.
 - Batas administratif merupakan rekonstruksi multi-sumber yang diselaraskan ke hierarki 2019, bukan satu snapshot resmi tepat pada tanggal pemilu.
-- Potongan GIS besar tidak otomatis tersedia pada clone baru, dan D3 masih berasal dari CDN.
+- D3 masih berasal dari CDN; aset data lokal lain tersedia pada clone repository.

@@ -1,0 +1,6 @@
+* text=auto
+
+# Generated runtime data should not dominate GitHub language statistics.
+/data/*.json linguist-generated=true
+/data/election2019/*.json linguist-generated=true
+/data/gis/**/*.json linguist-generated=true

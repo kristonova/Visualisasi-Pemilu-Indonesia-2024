@@ -1,9 +1,20 @@
-# GeoJSON kab/kec/desa dan chunk election2019 adalah data runtime GitHub Pages
-# dan sengaja tidak di-ignore.
-/data/gis/prov
-/data/gis/_build
-/SHP GIS/*
-# Output GIS lama dari build yang terbunuh; ACL-nya milik identitas lain
-# sehingga hanya dapat dihapus dengan hak administrator.
-/data/gis_broken_*
+# Runtime JSON under data/election2019 and data/gis/{kab,kec,desa} is
+# intentionally tracked for GitHub Pages.
+
+# Local environments and caches
+.venv/
 __pycache__/
+*.py[cod]
+
+# Large local source material
+/SHP GIS/
+
+# Build staging and retired GIS outputs
+/data/gis/_build/
+/data/gis/prov/
+/data/gis_broken_*/
+
+# Editor and operating-system noise
+.DS_Store
+Thumbs.db
+Desktop.ini

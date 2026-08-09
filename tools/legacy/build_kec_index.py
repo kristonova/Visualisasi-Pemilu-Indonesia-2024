@@ -1,3 +1,5 @@
+"""Legacy name/code index builder; retained for historical reproducibility only."""
+
 import glob
 import json
 import os
