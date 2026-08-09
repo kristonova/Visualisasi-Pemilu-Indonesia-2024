@@ -103,6 +103,40 @@ Kemudian buka [http://localhost:8000/](http://localhost:8000/). Gunakan `py -m h
 
 Data dan GeoJSON disajikan secara lokal. Halaman masih memuat D3 7.9.0 dari CDN, sehingga koneksi internet diperlukan kecuali D3 juga disediakan secara lokal.
 
+### Deployment GitHub Pages
+
+Dashboard ini adalah situs statis dan dapat disajikan langsung dari root branch
+`main`. Berkas `.nojekyll` wajib ikut di repository agar GitHub Pages tidak
+menghapus folder aset `_ds` yang namanya diawali garis bawah.
+
+Data runtime berikut juga harus di-commit karena semuanya dimuat melalui
+`fetch()` oleh browser:
+
+- `data/election2019/*.json`;
+- `data/gis/kab/*.json`;
+- `data/gis/kec/*.json`; dan
+- `data/gis/desa/*.json`.
+
+Artefak itu berjumlah sekitar 97,8 MiB dan setiap berkas jauh di bawah 100 MiB.
+Jangan commit `.venv/`, `SHP GIS/`, `data/gis/_build/`, atau
+`data/gis_broken_*`; semuanya merupakan dependensi lokal, sumber mentah, atau
+staging yang tidak dibutuhkan browser. Git LFS juga tidak boleh dipakai untuk
+JSON runtime karena GitHub Pages harus menyajikan isi JSON, bukan pointer LFS.
+
+Setelah memastikan seluruh build dan tes lulus, siapkan commit dengan:
+
+```powershell
+git add .gitignore .nojekyll index.html pemilu-2024.html app.js _ds data README.md AUDIT_2019.md tests
+git status --short
+git commit -m "Prepare static dashboard for GitHub Pages"
+git push origin main
+```
+
+Kemudian pilih **Settings → Pages → Deploy from a branch**, branch `main`,
+folder `/(root)`. Setelah deploy selesai, pastikan URL CSS `_ds/.../styles.css`,
+`data/election2019/P1.json`, dan `data/gis/kab/P1.json` semuanya mengembalikan
+HTTP 200.
+
 ## Membangun ulang data
 
 ### Prasyarat Python

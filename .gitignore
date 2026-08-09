@@ -1,9 +1,7 @@
-/data/gis/desa
-/data/gis/kec
-/data/gis/kab
+# GeoJSON kab/kec/desa dan chunk election2019 adalah data runtime GitHub Pages
+# dan sengaja tidak di-ignore.
 /data/gis/prov
 /data/gis/_build
-/data/election2019/*
 /SHP GIS/*
 # Output GIS lama dari build yang terbunuh; ACL-nya milik identitas lain
 # sehingga hanya dapat dihapus dengan hak administrator.
