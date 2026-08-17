@@ -661,10 +661,16 @@ function coverageNote(node, result, choiceTotal) {
   const anomalyText = rejectedTps > 0
     ? ` <b>${fmt(rejectedTps)} TPS anomali</b> tidak dimasukkan ke lima total metadata partisipasi.`
     : (totalTps > 0 ? ' Tidak ada TPS yang ditolak oleh pemeriksaan konsistensi metadata.' : '');
+  // Pilpres results come from a scrape that carries no registered-voter column;
+  // DPT is recovered per TPS from a second, narrower source.  Where that donor
+  // has no matching TPS the turnout metadata is genuinely absent, not zero.
+  const dptText = anomalies.no_dpt_donor > 0
+    ? ` Sumber hasil kontes ini tidak memuat kolom pemilih terdaftar; DPT dipulihkan per TPS dari scrape KPU terpisah, dan <b>${fmt(anomalies.no_dpt_donor)} TPS</b> tidak mempunyai pasangan di sumber itu. Partisipasi karena itu hanya terhitung di sebagian wilayah dan bukan angka nasional.`
+    : '';
   const diffText = diff && diff !== 0
     ? ` Jumlah perolehan opsi berbeda ${fmt(Math.abs(diff))} suara dari kolom suara-sah tervalidasi; total pilihan yang ditampilkan selalu Σ opsi.`
     : '';
-  return `<div class="banner"><span>⚑</span><span><b>Cakupan sumber:</b> ${sourceCoverage}. ${tpsText}${blankText}${voteOutlierText}${anomalyText}${diffText}${globalAudit}</span></div>`;
+  return `<div class="banner"><span>⚑</span><span><b>Cakupan sumber:</b> ${sourceCoverage}. ${tpsText}${blankText}${voteOutlierText}${anomalyText}${dptText}${diffText}${globalAudit}</span></div>`;
 }
 
 let showAll = false;
@@ -732,7 +738,7 @@ function renderPanel() {
         <dt>TPS dengan suara opsi ekstrem</dt><dd>${fmt(outlierVoteTps)}</dd>
       </dl>
       <div class="turnout"><i style="width:${turnout == null ? 0 : Math.max(0, Math.min(100, turnout * 100)).toFixed(1)}%"></i></div>
-      <div class="rmeta">Partisipasi tervalidasi ${pct(turnout)} · suara tidak sah ${pct(invalidRate)}</div>
+      <div class="rmeta">Partisipasi tervalidasi ${pct(turnout)}${turnout == null ? ' (pemilih terdaftar tidak tersedia di sumber)' : ''} · suara tidak sah ${pct(invalidRate)}</div>
     </div>
     <div class="psec">${coverageNote(node, result, total || 0)}</div>
     ${children.length ? `<div class="psec"><div class="ph">${ANAK[node.lv]} (${children.length.toLocaleString('id-ID')}) · klik untuk memperdalam</div>

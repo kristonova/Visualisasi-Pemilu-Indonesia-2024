@@ -1464,11 +1464,13 @@ def build(
     dry_run: bool = False,
 ) -> dict[str, Any]:
     hierarchy = load_hierarchy(hierarchy_path)
+    # 83,399 rather than 83,398: village keys are official KPU wilayah ids, so
+    # the two same-named villages in Merlung are two nodes instead of one.
     if (len(hierarchy.provinces), len(hierarchy.regencies), len(hierarchy.districts), len(hierarchy.villages)) != (
         34,
         514,
         7201,
-        83398,
+        83399,
     ):
         raise RuntimeError("Unexpected domestic KPU hierarchy counts")
 
@@ -1538,9 +1540,9 @@ def build(
             village_matches, village_audit, catalogs, hierarchy
         )
         print(
-            f"Matches: {len(regency_matches):,}/514 regencies, "
-            f"{len(district_matches):,}/7,201 districts, "
-            f"{len(village_matches):,}/83,398 villages",
+            f"Matches: {len(regency_matches):,}/{len(hierarchy.regencies):,} regencies, "
+            f"{len(district_matches):,}/{len(hierarchy.districts):,} districts, "
+            f"{len(village_matches):,}/{len(hierarchy.villages):,} villages",
             flush=True,
         )
 

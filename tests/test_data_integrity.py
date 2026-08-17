@@ -25,6 +25,26 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def walk_tree_node_names(tree_root: Path) -> list[str]:
+    """Names of the KPU node files the builder reads: root, province, regency,
+    district.  Village and TPS payloads are never opened."""
+
+    names = ["0.json"]
+    with (tree_root / "0.json").open("r", encoding="utf-8") as handle:
+        root = json.load(handle)
+    for province in root["children"]:
+        names.append(f"{province[0]}.json")
+        with (tree_root / f"{province[0]}.json").open("r", encoding="utf-8") as handle:
+            province_node = json.load(handle)
+        for regency in province_node["children"]:
+            names.append(f"{regency[0]}.json")
+            with (tree_root / f"{regency[0]}.json").open("r", encoding="utf-8") as handle:
+                regency_node = json.load(handle)
+            for district in regency_node["children"]:
+                names.append(f"{district[0]}.json")
+    return names
+
+
 def empty_entry(vote_count: int, stat_count: int):
     return [[0] * vote_count, [0] * stat_count]
 
@@ -80,13 +100,14 @@ def main() -> None:
     ]
 
     expected = {
-        "pilpres": (342, 499_325, 320, 3_414, 42_455),
+        "pilpres": (35, 806_583, 0, 7_246, 82_342),
         "dpr": (138, 35_537, 5_771, 1_211, 10_528),
-        "dprdprov": (734, 813_336, 79_093, 7_331, 83_528),
-        "dprdkab": (733, 813_332, 119_589, 7_330, 83_527),
+        "dprdprov": (734, 813_336, 79_093, 7_331, 83_529),
+        "dprdkab": (733, 813_332, 119_589, 7_330, 83_528),
     }
+    # Pilpres comes from the KawalPemilu export, whose files are named per
+    # province rather than with a numeric suffix.
     expected_suffixes = {
-        "pilpres": set(range(1, 343)),
         "dpr": set(range(612, 750)),
         "dprdprov": set(range(0, 734)),
         "dprdkab": set(range(0, 733)),
@@ -96,24 +117,74 @@ def main() -> None:
         assert item["file_count"] == files
         assert item["rows_included"] == rows
         assert item["unique_ids"] == rows
-        assert item["anomalies"]["blank_result_row"] == blank
+        assert item["anomalies"].get("blank_result_row", 0) == blank
         assert item["coverage"]["districts"] == districts
         assert item["coverage"]["villages"] == villages
         assert len(item["files"]) == files
         assert len({file["path"] for file in item["files"]}) == files
         assert all(len(file["sha256"]) == 64 for file in item["files"])
-        suffixes = {
-            int(re.search(r"-(\d+)\.csv$", file["path"]).group(1))
-            for file in item["files"]
-        }
-        assert suffixes == expected_suffixes[contest_id]
+        if contest_id in expected_suffixes:
+            suffixes = {
+                int(re.search(r"-(\d+)\.csv$", file["path"]).group(1))
+                for file in item["files"]
+            }
+            assert suffixes == expected_suffixes[contest_id]
         assert item["source_totals"]["votes"] == item["output_totals"]["votes"]
         assert item["validated_totals"]["stats"] == item["output_totals"]["stats"]
+        # Every source row must land on an official KPU village code.  Nothing
+        # may be dropped for an id the builder could not decompose.
+        assert item["rows_rejected"] == 0, contest_id
+        assert item["anomalies"].get("unresolved_leaf_id", 0) == 0, contest_id
+        assert item["anomalies"].get("id_district_mismatch", 0) == 0, contest_id
+        assert item["anomalies"].get("unknown_village_id", 0) == 0, contest_id
+        # Village identity is now the KPU code, so two same-named villages in
+        # one kecamatan no longer collide.
+        assert item["anomalies"].get("duplicate_natural_tps_key", 0) == 0, contest_id
 
     assert audit["contests"]["pilpres"]["source_totals"]["votes"] == {
-        "pemilih-1": 49_860_728,
-        "pemilih-2": 44_510_144,
+        "pemilih-1": 84_298_880,
+        "pemilih-2": 68_221_284,
     }
+    pilpres = audit["contests"]["pilpres"]
+    assert pilpres["source_kind"] == "kawalpemilu"
+    assert pilpres["dpt_backfill"]["tps_matched"] == 497_941
+    assert pilpres["dpt_backfill"]["tps_without_donor"] == 308_642
+    assert (
+        pilpres["dpt_backfill"]["tps_matched"]
+        + pilpres["dpt_backfill"]["tps_without_donor"]
+        == 806_583
+    )
+    # The legacy Pilpres batch is no longer a result source; it survives only as
+    # the donor for the two columns the newer export lacks.
+    assert audit["dpt_backfill"]["file_count"] == 342
+    assert audit["dpt_backfill"]["tps_indexed"] == 499_325
+    assert audit["dpt_backfill"]["counts"]["invalid_record"] == 1
+    assert audit["dpt_backfill"]["counts"].get("unresolved_leaf_id", 0) == 0
+    assert audit["dpt_backfill"]["counts"]["dropped_conflicting"] == 0
+
+    # The identity spine is the official KPU wilayah tree, and it must agree
+    # exactly with the independent dataprov-kec.csv reference.
+    spine = audit["sources"]["kawalpemilu_tree"]
+    assert spine["provinces"] == 35
+    assert spine["districts"] == 7_331
+    assert spine["villages"] == 83_529
+    assert spine["node_files"] == 8_011
+    assert len(spine["tree_sha256"]) == 64
+    # Recompute the spine digest from the physical node files when they are
+    # available, so the hierarchy is verified rather than merely asserted.
+    tree_root = Path(spine["root"])
+    if tree_root.is_dir():
+        node_names = walk_tree_node_names(tree_root)
+        assert len(node_names) == 8_011
+        lines = sorted(
+            f"{name}:{sha256_file(tree_root / name)}" for name in node_names
+        )
+        recomputed = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+        assert recomputed == spine["tree_sha256"]
+        assert (
+            sum((tree_root / name).stat().st_size for name in node_names)
+            == spine["bytes"]
+        )
     assert audit["contests"]["dpr"]["source_totals"]["votes"] == {
         "pkb": 502_556, "gerinda": 483_553, "pdip": 982_258,
         "golkar": 505_717, "nasdem": 991_234, "garuda": 57_771,
@@ -147,18 +218,25 @@ def main() -> None:
     }
     assert dpr_zero_files == set(range(734, 750))
 
-    assert audit["totals"]["result_csv_files"] == 1_947
-    assert audit["totals"]["result_rows_read"] == 2_161_531
-    assert audit["totals"]["result_rows_included"] == 2_161_530
-    assert audit["totals"]["result_rows_rejected"] == 1
+    assert audit["totals"]["result_csv_files"] == 1_640
+    assert audit["totals"]["result_rows_read"] == 2_468_788
+    assert audit["totals"]["result_rows_included"] == 2_468_788
+    assert audit["totals"]["result_rows_rejected"] == 0
     assert audit["totals"]["support_csv_files"] == 7
-    assert audit["totals"]["all_csv_files"] == 1_954
-    assert audit["totals"]["all_csv_bytes"] == 1_068_772_711
-    assert audit["contests"]["pilpres"]["anomalies"]["invalid_record"] == 1
+    assert audit["totals"]["dpt_donor_csv_files"] == 342
+    assert audit["totals"]["all_csv_files"] == 1_989
+    assert audit["totals"]["all_csv_bytes"] == 1_125_400_831
     assert {
         contest_id: audit["contests"][contest_id]["output_totals"]["stats"]["outlier-vote-tps"]
         for contest_id in contest_ids
-    } == {"pilpres": 0, "dpr": 1, "dprdprov": 56, "dprdkab": 31}
+    } == {"pilpres": 3, "dpr": 1, "dprdprov": 56, "dprdkab": 31}
+    # Pilpres reaches all 35 province groups now, but SITUNG never completed
+    # Papua's noken districts; the gap is stated, not smoothed over.
+    gap = audit["coverage_gap"]
+    assert gap["districts_total"] == 7_331
+    assert gap["districts_with_pilpres"] == 7_246
+    assert gap["districts_without_pilpres"] == 85
+    assert len(gap["entries"]) == 85
     assert len({item["sha256"] for item in audit["reference_files"]}) == 1
     assert len(audit["support_files"]) == 7
     assert len({item["path"] for item in audit["support_files"]}) == 7
@@ -176,10 +254,12 @@ def main() -> None:
     if source_root.is_dir():
         inventoried = {
             item["path"]: item
-            for contest in audit["contests"].values()
+            for contest_id, contest in audit["contests"].items()
+            if contest_id != "pilpres"
             for item in contest["files"]
         }
         inventoried.update({item["path"]: item for item in audit["support_files"]})
+        inventoried.update({item["path"]: item for item in audit["dpt_backfill"]["files"]})
         physical = {
             path.relative_to(source_root).as_posix(): path
             for path in source_root.rglob("*.csv")
@@ -191,6 +271,16 @@ def main() -> None:
             assert path.stat().st_size == expected_file["bytes"], relative
             assert sha256_file(path) == expected_file["sha256"], relative
 
+    # The Pilpres export lives under its own root; reconcile it separately.
+    pilpres_root = Path(audit["sources"]["kawalpemilu_csv"]["root"])
+    if pilpres_root.is_dir():
+        physical_pilpres = {path.name: path for path in pilpres_root.glob("*.csv")}
+        inventoried_pilpres = {item["path"]: item for item in pilpres["files"]}
+        assert physical_pilpres.keys() == inventoried_pilpres.keys()
+        for name, path in physical_pilpres.items():
+            assert path.stat().st_size == inventoried_pilpres[name]["bytes"], name
+            assert sha256_file(path) == inventoried_pilpres[name]["sha256"], name
+
     provinces = wilayah["prov"]
     regencies = [regency for province in provinces for regency in province["kab"]]
     districts = [district for regency in regencies for district in regency["kec"]]
@@ -199,8 +289,15 @@ def main() -> None:
     assert sum(not province["n"].startswith("+") for province in provinces) == 34
     assert len(regencies) == 644
     assert len(districts) == 7_331
-    assert len(villages) == 83_528
+    assert len(villages) == 83_529
     assert len(election["kec"]) == 7_331
+
+    # Village tokens are official KPU wilayah ids, not positions inside the
+    # kecamatan, so they stay identical across rebuilds and never merge two
+    # same-named villages.
+    village_codes = [village["k"] for village in villages]
+    assert len(set(village_codes)) == len(village_codes)
+    assert all(re.fullmatch(r"-?\d+", code) for code in village_codes)
 
     hierarchy_leaf_keys = set()
     for province in provinces:
@@ -209,7 +306,21 @@ def main() -> None:
                 district_key = f"P{province['k']}.{regency['k']}.{district['k']}"
                 for village in district.get("kel", []):
                     hierarchy_leaf_keys.add(f"{district_key}.{village['k']}")
-    assert len(hierarchy_leaf_keys) == 83_528
+    assert len(hierarchy_leaf_keys) == 83_529
+
+    # Merlung holds two distinct villages the scrape both calls MERLUNG (the KPU
+    # tree disambiguates them as MERLUNG and MERLUNG2).  The old alphabetical
+    # token merged them into a single node; the KPU code keeps them apart.
+    merlung = [
+        district
+        for province in provinces if province["k"] == "15885"
+        for regency in province["kab"] if regency["k"] == "16862"
+        for district in regency["kec"] if district["k"] == "16888"
+    ]
+    assert len(merlung) == 1
+    merlung_names = [village["n"].upper() for village in merlung[0]["kel"]]
+    assert len(merlung_names) == 10
+    assert len(merlung_names) - len(set(merlung_names)) == 1
 
     chunk_paths = sorted((DATA / "election2019").glob("P*.json"))
     assert len(chunk_paths) == 35

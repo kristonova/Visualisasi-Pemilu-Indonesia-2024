@@ -86,7 +86,7 @@ def hierarchy() -> tuple[
         "province": 34,
         "regency": 514,
         "district": 7_201,
-        "village": 83_398,
+        "village": 83_399,
     }
     actual_counts = {
         level: sum(value == level for value in levels.values())
@@ -288,11 +288,13 @@ def main() -> None:
     assert identity_spine.get("sha256") == hashlib.sha256(
         hierarchy_path.read_bytes()
     ).hexdigest()
+    # 83,399 rather than 83,398: village keys are official KPU wilayah ids, so
+    # the two same-named villages in Merlung are two nodes instead of one.
     assert audit.get("hierarchy") == {
         "provinces": 34,
         "regencies": 514,
         "districts": 7_201,
-        "villages": 83_398,
+        "villages": 83_399,
     }
     geometry_audit = audit.get("geometry_output")
     assert isinstance(geometry_audit, dict), "audit geometry_output hilang"
@@ -322,7 +324,7 @@ def main() -> None:
     assert village_matching.get("uupp_ineligible_source_rows") == {"desa2020big": 16}
 
     assert village_matching.get("matched") == 81_046
-    assert village_matching.get("unmatched") == 2_352
+    assert village_matching.get("unmatched") == 2_353
     assert village_matching.get("historic_code_bridge", {}).get("bridged") == 1_034
     modern_vintage = village_matching.get("modern_fallback_vintage", {})
     assert modern_vintage.get("selected_features") == 185

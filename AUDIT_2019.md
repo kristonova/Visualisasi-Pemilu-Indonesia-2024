@@ -7,41 +7,110 @@ di `data/audit2019.json`. Audit GIS ditulis oleh `build_gis_data.py` ke
 
 ## Hasil pemilu
 
-Sumber yang diaudit adalah seluruh CSV di
-`D:\PROJECT\Scrapping Hasil Pemilu 2019 KPU\scrapping KPU`, bukan sampel
-`src/` di repository ini.
+Dua scrape menjadi sumber, digabung lewat ID wilayah KPU resmi, bukan lewat
+nama:
+
+| Sumber | Peran | Akar |
+| --- | --- | --- |
+| Scrape KPU legacy | DPR RI, DPRD provinsi, DPRD kabupaten/kota; sekaligus satu-satunya pemasok DPT | `...\Scrapping Hasil Pemilu 2019 KPU\scrapping KPU` |
+| Ekspor KawalPemilu per provinsi | Pilpres | `...\json-kpu-2019\csv-per-provinsi` |
+| Dump node wilayah KawalPemilu | Tulang punggung identitas (ID wilayah KPU) | `...\json-kpu-2019\full-tps-kawalpemilu` |
+
+Batch Pilpres pada scrape legacy hanya pernah mencakup 15 dari 35 kelompok
+provinsi, sehingga peta Pilpres nasional menutupi kurang dari separuh negeri.
+Ekspor KawalPemilu menggantikannya. Sampel `src/` di repository ini bukan
+sumber audit.
 
 | Kontes | CSV hasil | Rekaman valid masuk | Kecamatan tercakup | Desa/kelurahan tercakup | Rekaman hasil kosong |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Pilpres | 342 | 499.325 | 3.414 | 42.455 | 320 |
+| Pilpres | 35 | 806.583 | 7.246 | 82.342 | 0 |
 | DPR RI | 138 | 35.537 | 1.211 | 10.528 | 5.771 |
-| DPRD provinsi | 734 | 813.336 | 7.331 | 83.528 | 79.093 |
-| DPRD kabupaten/kota | 733 | 813.332 | 7.330 | 83.527 | 119.589 |
-| **Total** | **1.947** | **2.161.530** | — | — | **204.773** |
+| DPRD provinsi | 734 | 813.336 | 7.331 | 83.529 | 79.093 |
+| DPRD kabupaten/kota | 733 | 813.332 | 7.330 | 83.528 | 119.589 |
+| **Total** | **1.640** | **2.468.788** | — | — | **204.453** |
 
-Selain itu ada tujuh CSV referensi/pendukung. Jadi inventaris lengkap berisi
-1.954 CSV dengan ukuran 1.068.772.711 byte. Keempat salinan
-`dataprov-kec.csv` identik berdasarkan SHA-256.
+Selain itu ada tujuh CSV referensi/pendukung dan 342 CSV Pilpres legacy yang
+kini hanya berperan sebagai pemasok DPT. Inventaris lengkap berisi 1.989 CSV
+berukuran 1.125.400.831 byte, ditambah 8.011 berkas node hierarki
+(26.200.573 byte). Keempat salinan `dataprov-kec.csv` identik berdasarkan
+SHA-256.
+
+### Perbandingan dengan hasil resmi KPU
+
+| Angka | Artefak ini | Resmi KPU | Rasio |
+| --- | ---: | ---: | ---: |
+| Suara 01 | 84.298.880 | 85.607.362 | 98,5% |
+| Suara 02 | 68.221.284 | 68.650.239 | 99,4% |
+| Share 01 | 55,27% | 55,50% | — |
+
+Per provinsi rasionya 98–100% di semua wilayah **kecuali Papua** (01: 71,1%,
+02: 61,0%). SITUNG tidak pernah merampungkan distrik sistem noken. Kabupaten
+**ASMAT** (23 kecamatan) dan kecamatan **PANTE BIDARI** (Aceh Timur) tidak ada
+sama sekali; total 85 kecamatan tanpa hasil Pilpres, seluruhnya terdaftar pada
+`coverage_gap.entries` di `data/audit2019.json`. Kekosongan ini dinyatakan,
+bukan diisi atau diperhalus.
+
+### Identitas wilayah
+
+Kunci setiap tingkat adalah ID wilayah KPU resmi, termasuk kelurahan. Kunci
+desa sebelumnya hanya posisi alfabetis di dalam kecamatan, sehingga bergeser
+setiap kali data sumber berubah.
+
+- Kolom `id` pada CSV legacy ternyata sudah merupakan rangkaian ID resmi:
+  `1149217531776900003704` = `1`·`1492`·`1753`·`1776`·`900003704`. Karena
+  panjang tiap bagian tidak tetap, setiap prefiks diuji terhadap indeks pohon.
+  Kode pendek dapat menyerupai awalan kode panjang — `12920` (Sumatera Barat)
+  juga terbaca sebagai `1`+`2`+`9`+`20` di Aceh — sehingga pemecah ambiguitas
+  adalah kecamatan pada baris yang sama, dan nama desa hanya jadi upaya
+  terakhir. Tidak ada satu pun baris yang gagal diuraikan.
+- Ekspor KawalPemilu membawa `id_wilayah` langsung; seluruh 82.342 nilainya
+  resolve tanpa kegagalan.
+- Pohon KPU (35 provinsi, 644 kabupaten/kota, 7.331 kecamatan) wajib cocok
+  persis dengan `dataprov-kec.csv` yang independen; build gagal bila tidak.
+- Nama tampilan tetap memakai ejaan CSV hasil, bukan ejaan pohon, karena
+  ejaan itulah yang sudah dipakai pipeline GIS untuk mencocokkan geometri dan
+  karena pohon memuat ejaan yang lebih buruk (`JOHAN PAHWALAN` untuk
+  `JOHAN PAHLAWAN`). Seluruh 137 perbedaan ejaan tercatat pada `name_aliases`.
 
 ### Rekonsiliasi
 
-- Semua 1.947 nama berkas hasil ada dalam inventaris, termasuk 16 berkas DPR
+- Seluruh 1.640 nama berkas hasil ada dalam inventaris, termasuk 16 berkas DPR
   RI kosong dengan suffix 734–749.
-- Rentang berkas lengkap adalah Pilpres 1–342, DPR RI 612–749, DPRD provinsi
-  0–733, dan DPRD kabupaten/kota 0–732.
-- Dari 2.161.531 rekaman fisik, 2.161.530 masuk ke artefak visualisasi. Satu
-  pseudo-rekaman pada `Pilpres RI/data/datakpu-306.csv` hanya berisi byte NUL;
-  rekaman itu tidak mempunyai ID, wilayah, TPS, atau angka hasil dan dicatat
-  sebagai rusak, bukan diubah menjadi suara.
+- Rentang berkas legacy adalah DPR RI 612–749, DPRD provinsi 0–733, dan DPRD
+  kabupaten/kota 0–732. Berkas Pilpres dinamai per provinsi.
+- Seluruh 2.468.788 rekaman hasil masuk ke artefak visualisasi; tidak ada yang
+  ditolak. Satu pseudo-rekaman pada `Pilpres RI/data/datakpu-306.csv` hanya
+  berisi byte NUL; berkas itu kini hanya dipakai sebagai pemasok DPT, dan
+  rekaman tersebut dicatat rusak pada `dpt_backfill.counts.invalid_record`.
 - Setiap ID unik di dalam kontes. Dua belas benturan nama-wilayah-TPS di
-  Merlung mempunyai ID berbeda; semuanya dipertahankan dan agregasi memakai
-  key wilayah komposit, bukan nama global.
+  Merlung hilang dengan sendirinya: identitas kini ID desa, bukan nama, dan
+  kedua desa bernama `MERLUNG` (kode 16891 dan 90554) menjadi node terpisah.
 - Penjumlahan seluruh potongan hasil desa tepat sama dengan indeks kecamatan.
   Checksum total suara setiap opsi juga dikunci oleh
   `tests/test_data_integrity.py`.
+- Agregat kecamatan hasil build dicocokkan dengan `agregasi_kecamatan.csv`
+  bawaan dataset: 7.246 dari 7.246 kecamatan sama persis.
 - Hierarki gabungan berisi 35 kelompok provinsi (34 provinsi 2019 dan
   `+Luar Negeri`), 644 unit kabupaten/kota atau luar negeri, 7.331 kecamatan
-  atau unit luar negeri, dan 83.528 desa/kelurahan atau unit luar negeri.
+  atau unit luar negeri, dan 83.529 desa/kelurahan atau unit luar negeri.
+
+### DPT dan partisipasi
+
+Ekspor KawalPemilu tidak memuat kolom pemilih terdaftar. DPT dan pengguna hak
+pilih karena itu dipulihkan per TPS dari scrape legacy dengan kunci
+`(id_kelurahan, nomor_tps)`; nomor TPS dinormalisasi karena sumber legacy
+menulis `TPS 01` sementara ekspor menulis `1`.
+
+- 499.325 TPS legacy terindeks, 497.941 di antaranya menemukan pasangan.
+- 308.642 dari 806.583 TPS Pilpres tidak punya pemasok DPT.
+- Cakupannya 100% di dalam 15 provinsi yang memang ada pada scrape legacy, dan
+  nol di luar itu.
+
+Gerbang validasi tidak diubah: kelima metadata partisipasi hanya masuk total
+tampilan bila satu rekaman konsisten secara internal. TPS tanpa pemasok DPT
+karena itu tidak pernah menyumbang partisipasi — sesuai makna `validated-tps`
+yang berlaku sejak awal. **Partisipasi Pilpres bukan angka nasional**, dan
+panel serta catatan cakupan menyatakannya.
 
 ### Arti kosong, nol, dan anomali
 
