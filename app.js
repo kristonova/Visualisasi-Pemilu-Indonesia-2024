@@ -1,7 +1,10 @@
-/* Peta hasil Pemilu Indonesia 2019.
-   Hierarki, perolehan suara, statistik TPS, dan geometri dibaca dari artefak lokal
-   yang dibangun dari CSV KPU serta shapefile yang diselaraskan ke hierarki
-   wilayah Pemilu 2019. Geometri bukan klaim snapshot murni pada tanggal pemilu. */
+/* Peta hasil Pemilu Indonesia, 2019 dan 2024.
+   Hierarki, perolehan suara, statistik TPS, dan geometri dibaca dari artefak lokal.
+   Setiap tahun adalah dataset yang berdiri sendiri: pohon wilayah, hasil, dan
+   GeoJSON-nya terpisah karena batas serta kode desa 2019 dan 2024 berbeda, dan
+   Papua dimekarkan menjadi enam provinsi setelah 2019. Karena itu peralihan tahun
+   memuat ulang seluruh berkas, bukan sekadar mengganti angka di atas peta yang
+   sama. Geometri bukan klaim snapshot murni pada tanggal pemungutan suara. */
 'use strict';
 
 const $ = selector => document.querySelector(selector);
@@ -36,9 +39,17 @@ function OKL(L, C, H) {
   return '#' + channel(r) + channel(g) + channel(bb);
 }
 
-const PASLON = [
+/* Warna paslon sengaja konsisten lintas tahun: biru tetap milik tiket Prabowo
+   dan merah tetap milik tiket yang diusung PDI-P, sehingga pembaca yang sudah
+   membaca peta 2019 tidak perlu belajar ulang saat menekan tombol 2024. */
+const PASLON_2019 = [
   { column: 'pemilih-1', no: '01', pendek: 'Jokowi–Ma\'ruf', nama: 'Ir. H. Joko Widodo – Prof. Dr. (H.C.) K.H. Ma\'ruf Amin', warna: '#e02424' },
   { column: 'pemilih-2', no: '02', pendek: 'Prabowo–Sandi', nama: 'H. Prabowo Subianto – Sandiaga Salahuddin Uno', warna: '#1d70b8' }
+];
+const PASLON_2024 = [
+  { column: 'paslon-1', no: '01', pendek: 'Anies–Muhaimin', nama: 'H. Anies Rasyid Baswedan, Ph.D. – Dr. (H.C.) H. A. Muhaimin Iskandar', warna: '#0f7f5c' },
+  { column: 'paslon-2', no: '02', pendek: 'Prabowo–Gibran', nama: 'H. Prabowo Subianto – Gibran Rakabuming Raka', warna: '#1d70b8' },
+  { column: 'paslon-3', no: '03', pendek: 'Ganjar–Mahfud', nama: 'H. Ganjar Pranowo, S.H., M.I.P. – Prof. Dr. H. M. Mahfud MD', warna: '#e02424' }
 ];
 
 /* Nomor partai mengikuti surat suara: 1–14, partai lokal Aceh 15–18,
@@ -69,14 +80,80 @@ const PARTY_SPEC = [
   warna: index < 14 ? OKL(.585, .175, hue) : OKL(.665, .105, hue)
 }));
 
-const PARTY_BY_COLUMN = new Map(PARTY_SPEC.map(p => [p.column, p]));
+/* Surat suara 2024: 1–17 partai nasional, 18–23 partai lokal Aceh, lalu Ummat
+   di nomor 24. Kolom `partai-<nomor urut>` adalah kontrak yang harus dipakai
+   builder legislatif 2024 nanti, sama seperti `paslon-<nomor urut>` pada
+   Pilpres 2024; kolom yang tidak dikenali tetap tampil lewat unknownOption(). */
+const PARTY_SPEC_2024 = [
+  ['1', 'PKB', 'Partai Kebangkitan Bangsa', 155],
+  ['2', 'Gerindra', 'Partai Gerakan Indonesia Raya', 60],
+  ['3', 'PDI-P', 'PDI Perjuangan', 25],
+  ['4', 'Golkar', 'Partai Golkar', 90],
+  ['5', 'NasDem', 'Partai NasDem', 245],
+  ['6', 'Buruh', 'Partai Buruh', 40],
+  ['7', 'Gelora', 'Partai Gelombang Rakyat Indonesia', 225],
+  ['8', 'PKS', 'Partai Keadilan Sejahtera', 130],
+  ['9', 'PKN', 'Partai Kebangkitan Nusantara', 15],
+  ['10', 'Hanura', 'Partai Hati Nurani Rakyat', 75],
+  ['11', 'Garuda', 'Partai Garda Republik Indonesia', 265],
+  ['12', 'PAN', 'Partai Amanat Nasional', 195],
+  ['13', 'PBB', 'Partai Bulan Bintang', 350],
+  ['14', 'Demokrat', 'Partai Demokrat', 275],
+  ['15', 'PSI', 'Partai Solidaritas Indonesia', 8],
+  ['16', 'Perindo', 'Partai Perindo', 290],
+  ['17', 'PPP', 'Partai Persatuan Pembangunan', 330],
+  ['18', 'PNA', 'Partai Nanggroe Aceh', 45],
+  ['19', 'Gabthat', 'Partai Generasi Atjeh Beusaboh Tha\'at Dan Taqwa', 105],
+  ['20', 'PDA', 'Partai Darul Aceh', 200],
+  ['21', 'PA', 'Partai Aceh', 20],
+  ['22', 'PAS Aceh', 'Partai Adil Sejahtera Aceh', 145],
+  ['23', 'SIRA', 'Partai SIRA', 240],
+  ['24', 'Ummat', 'Partai Ummat', 310]
+].map(([no, pendek, nama, hue], index) => ({
+  column: `partai-${no}`, no, pendek, nama, index,
+  warna: index < 17 ? OKL(.585, .175, hue) : OKL(.665, .105, hue)
+}));
+
+const partyIndex = spec => new Map(spec.map(party => [columnKey(party.column), party]));
 const CONTEST_ORDER = ['pilpres', 'dpr', 'dprdprov', 'dprdkab'];
-const CONTEST_LABELS = {
-  pilpres: ['Pemilu Presiden 2019', 'Presiden 2019'],
-  dpr: ['Pemilihan Legislatif 2019', 'DPR RI 2019'],
-  dprdprov: ['Pemilihan Legislatif 2019', 'DPRD Provinsi 2019'],
-  dprdkab: ['Pemilihan Legislatif 2019', 'DPRD Kab/Kota 2019']
+const CONTEST_NAMES = {
+  pilpres: ['Pemilu Presiden', 'Presiden'],
+  dpr: ['Pemilihan Legislatif', 'DPR RI'],
+  dprdprov: ['Pemilihan Legislatif', 'DPRD Provinsi'],
+  dprdkab: ['Pemilihan Legislatif', 'DPRD Kab/Kota']
 };
+
+/* Satu entri per tahun pemilu. `keyPrefix` mengikuti berkas hierarki: token KPU
+   2019 memakai awalan "P", sedangkan kunci 2024 adalah kode Kemendagri apa
+   adanya (11.01.01.2015) sehingga sama persis dengan KDEPUM pada shapefile. */
+const DATASETS = [
+  {
+    id: '2024',
+    hierarchy: 'data/wilayah2024.json',
+    election: 'data/election2024.json',
+    leafDir: 'data/election2024',
+    gisDir: 'data/gis2024',
+    paslon: PASLON_2024,
+    parties: PARTY_SPEC_2024,
+    contests: ['pilpres'],
+    geoNote: 'batas desa Kemendagri edisi Juli 2026',
+    sourceNote: 'scrape KPU Sirekap 2024'
+  },
+  {
+    id: '2019',
+    hierarchy: 'data/wilayah.json',
+    election: 'data/election2019.json',
+    leafDir: 'data/election2019',
+    gisDir: 'data/gis',
+    paslon: PASLON_2019,
+    parties: PARTY_SPEC,
+    contests: CONTEST_ORDER,
+    geoNote: 'batas diselaraskan ke hierarki 2019',
+    sourceNote: 'CSV KPU 2019'
+  }
+];
+const DEFAULT_YEAR = DATASETS[0].id;
+const PARTY_BY_COLUMN = partyIndex(PARTY_SPEC);
 const LEVELS = ['Nasional', 'Provinsi', 'Kabupaten/Kota', 'Kecamatan', 'Kelurahan/Desa'];
 const ANAK = ['Provinsi', 'Kabupaten/Kota', 'Kecamatan', 'Kelurahan/Desa', ''];
 const BGT = '#f3f2f2';
@@ -85,6 +162,7 @@ const TIE_COLOR = '#8b8581';
 
 let PEMILU = [];
 const S = {
+  D: null, tahun: null, bundles: new Map(), active: null,
   pemilu: null, mode: 'margin', fokus: 0, sel: null, root: null,
   nodes: new Map(), index: [], results: new Map(), contestsById: new Map(),
   statNames: [], statIndex: new Map(), election: null, sourceSummary: null,
@@ -92,6 +170,36 @@ const S = {
   leafLoads: new Map(), leafErrors: new Map(), sort: { k: 'v', d: -1 },
   mapViewKey: null, mapViewNodeKey: null, mapCollection: null, hasGeoView: false
 };
+
+/* Bidang S yang milik satu tahun saja. Peralihan tahun menyimpan bidang ini ke
+   bundel tahun yang ditinggalkan lalu memuat bundel tahun tujuan, sehingga sisa
+   kode tetap membaca S seperti biasa dan pohon yang sudah dimuat tidak perlu
+   diambil ulang dari jaringan. */
+const BUNDLE_FIELDS = ['D', 'pemilu', 'sel', 'root', 'nodes', 'index', 'results',
+  'contestsById', 'statNames', 'statIndex', 'election', 'sourceSummary',
+  'geoProv', 'geoKab', 'geoKec', 'geoDesa', 'leafLoads', 'leafErrors'];
+
+function blankBundle(D) {
+  return {
+    D, pemilu: null, sel: null, root: null, nodes: new Map(), index: [],
+    results: new Map(), contestsById: new Map(), statNames: [], statIndex: new Map(),
+    election: null, sourceSummary: null, geoProv: null, geoKab: new Map(),
+    geoKec: new Map(), geoDesa: new Map(), leafLoads: new Map(), leafErrors: new Map(),
+    PEMILU: []
+  };
+}
+function saveBundle(bundle) {
+  if (!bundle) return;
+  for (const field of BUNDLE_FIELDS) bundle[field] = S[field];
+  bundle.PEMILU = PEMILU;
+}
+function restoreBundle(bundle) {
+  for (const field of BUNDLE_FIELDS) S[field] = bundle[field];
+  PEMILU = bundle.PEMILU;
+  S.active = bundle;
+  S.tahun = bundle.D.id;
+}
+function datasetById(id) { return DATASETS.find(dataset => dataset.id === id) || DATASETS[0]; }
 
 function columnKey(value) {
   const key = String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -104,7 +212,10 @@ function unknownOption(column, index) {
   return { column, no: String(index + 1), pendek: label, nama: label, warna: OKL(.62, .12, (index * 67) % 360) };
 }
 
-function normalizeContests(rawContests) {
+function normalizeContests(rawContests, dataset = DATASETS[DATASETS.length - 1]) {
+  const paslonSpec = dataset.paslon || PASLON_2019;
+  const partySpec = dataset.parties || PARTY_SPEC;
+  const partyByColumn = partyIndex(partySpec);
   const rows = Array.isArray(rawContests) ? rawContests : [];
   const byId = new Map(rows.map((contest, sourceIndex) => [contest.id, { ...contest, sourceIndex }]));
   return CONTEST_ORDER.map(id => {
@@ -113,33 +224,34 @@ function normalizeContests(rawContests) {
     let columns = Array.isArray(source.vote_columns) ? source.vote_columns.slice() : [];
     let ordered;
     if (id === 'pilpres') {
-      if (!columns.length) columns = PASLON.map(o => o.column);
+      if (!columns.length) columns = paslonSpec.map(o => o.column);
       ordered = columns.map((column, sourceIndex) => ({ column, sourceIndex }))
         .sort((a, b) => {
-          const ai = PASLON.findIndex(o => columnKey(o.column) === columnKey(a.column));
-          const bi = PASLON.findIndex(o => columnKey(o.column) === columnKey(b.column));
+          const ai = paslonSpec.findIndex(o => columnKey(o.column) === columnKey(a.column));
+          const bi = paslonSpec.findIndex(o => columnKey(o.column) === columnKey(b.column));
           return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi) || a.sourceIndex - b.sourceIndex;
         });
     } else {
-      if (!columns.length) columns = PARTY_SPEC.map(o => o.column);
+      if (!columns.length) columns = partySpec.map(o => o.column);
       ordered = columns.map((column, sourceIndex) => ({ column, sourceIndex }))
         .sort((a, b) => {
-          const ap = PARTY_BY_COLUMN.get(columnKey(a.column));
-          const bp = PARTY_BY_COLUMN.get(columnKey(b.column));
+          const ap = partyByColumn.get(columnKey(a.column));
+          const bp = partyByColumn.get(columnKey(b.column));
           return (ap ? ap.index : 999) - (bp ? bp.index : 999) || a.sourceIndex - b.sourceIndex;
         });
     }
     const opsi = ordered.map(({ column }, index) => {
       if (id === 'pilpres') {
-        const option = PASLON.find(o => columnKey(o.column) === columnKey(column));
+        const option = paslonSpec.find(o => columnKey(o.column) === columnKey(column));
         return option ? { ...option } : unknownOption(column, index);
       }
-      const option = PARTY_BY_COLUMN.get(columnKey(column));
+      const option = partyByColumn.get(columnKey(column));
       return option ? { ...option } : unknownOption(column, index);
     });
-    const [kicker, nama] = CONTEST_LABELS[id];
+    const [kicker, nama] = CONTEST_NAMES[id];
     return {
-      id, kicker, nama, opsi, jenis: id === 'pilpres' ? 'paslon' : 'partai',
+      id, kicker: `${kicker} ${dataset.id}`, nama: `${nama} ${dataset.id}`, opsi,
+      jenis: id === 'pilpres' ? 'paslon' : 'partai',
       sourceIndex: source.sourceIndex,
       sourceIndexes: ordered.map(row => row.sourceIndex),
       voteColumns: ordered.map(row => row.column)
@@ -150,9 +262,12 @@ function normalizeContests(rawContests) {
 /* ── pohon wilayah dan hasil eksak ───────────────────────────────── */
 function buildTree(raw) {
   S.nodes = new Map();
+  // 2019 memakai token KPU berawalan "P"; 2024 memakai kode Kemendagri tanpa
+  // awalan sehingga kunci simpul sama persis dengan KDEPUM pada shapefile.
+  const prefix = typeof raw.key_prefix === 'string' ? raw.key_prefix : 'P';
   const root = { lv: 0, key: 'ID', name: 'INDONESIA', code: '0', anak: [], parent: null };
   for (const p of raw.prov || []) {
-    const P = { lv: 1, key: 'P' + p.k, name: String(p.n || '').replace(/^\+\s*/, '').toUpperCase(), code: String(p.k), anak: [], parent: root };
+    const P = { lv: 1, key: prefix + p.k, name: String(p.n || '').replace(/^\+\s*/, '').toUpperCase(), code: String(p.k), anak: [], parent: root };
     for (const k of p.kab || []) {
       const K = { lv: 2, key: `${P.key}.${k.k}`, name: String(k.n || '').toUpperCase(), code: String(k.k), anak: [], parent: P };
       for (const c of k.kec || []) {
@@ -210,14 +325,15 @@ function combineResults(results, E) {
   return out;
 }
 
-function installElectionData(data) {
+function installElectionData(data, dataset = DATASETS[DATASETS.length - 1]) {
   S.election = data;
   S.sourceSummary = data.source_summary || null;
   S.statNames = Array.isArray(data.stats) ? data.stats.slice() : [];
   S.statIndex = new Map(S.statNames.map((name, index) => [name, index]));
-  PEMILU = normalizeContests(data.contests);
-  if (PEMILU.length !== 4) {
-    console.warn(`Diharapkan empat kontes 2019, ditemukan ${PEMILU.length}.`);
+  PEMILU = normalizeContests(data.contests, dataset);
+  const expected = (dataset.contests || CONTEST_ORDER).length;
+  if (PEMILU.length !== expected) {
+    console.warn(`Diharapkan ${expected} kontes ${dataset.id}, ditemukan ${PEMILU.length}.`);
   }
   S.contestsById = new Map(PEMILU.map(contest => [contest.id, contest]));
   S.results = new Map(PEMILU.map(contest => [contest.id, new Map()]));
@@ -259,22 +375,25 @@ function statOf(nodeOrResult, name) {
 async function loadLeafResults(P) {
   if (!P) return;
   if (S.leafLoads.has(P.key)) return S.leafLoads.get(P.key);
+  // Peta dan daftar kontes dipegang di sini supaya chunk yang selesai setelah
+  // pengguna berpindah tahun tetap ditulis ke bundel asalnya.
+  const dataset = S.D, results = S.results, contests = PEMILU, errors = S.leafErrors;
   const promise = (async () => {
     let chunk = null;
     try {
-      const response = await fetch(`data/election2019/${encodeURIComponent(P.key)}.json`);
+      const response = await fetch(`${dataset.leafDir}/${encodeURIComponent(P.key)}.json`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       chunk = await response.json();
       if (chunk.schema !== 2 || !chunk.leaf) throw new Error('skema chunk hasil desa tidak didukung');
     } catch (error) {
-      S.leafErrors.set(P.key, error.message);
+      errors.set(P.key, error.message);
       console.warn(`Hasil desa ${P.key} gagal dimuat`, error);
       chunk = { leaf: {} };
     }
     for (const K of P.anak) for (const C of K.anak) for (const L of C.anak) {
       const row = chunk.leaf[L.key];
-      for (const E of PEMILU) {
-        S.results.get(E.id).set(L.key, parseEntry(Array.isArray(row) ? row[E.sourceIndex] : null, E));
+      for (const E of contests) {
+        results.get(E.id).set(L.key, parseEntry(Array.isArray(row) ? row[E.sourceIndex] : null, E));
       }
     }
   })();
@@ -346,7 +465,24 @@ function colorOf(node) {
   return d3.interpolateRgb(d3.interpolateRgb(BGT, color)(.22), color)(Math.min(1, marginOf(node) / .5));
 }
 
-/* ── kontrol kontes dan legenda ──────────────────────────────────── */
+/* ── kontrol tahun, kontes, dan legenda ──────────────────────────── */
+function renderYears() {
+  const seg = $('#yearseg');
+  if (!seg) return;
+  seg.innerHTML = DATASETS.map(dataset =>
+    `<label class="seg-opt"><input type="radio" name="tahun" value="${esc(dataset.id)}"
+      ${dataset.id === S.tahun ? 'checked' : ''}>${esc(dataset.id)}</label>`).join('');
+  seg.querySelectorAll('input').forEach(input => {
+    input.onchange = () => { if (input.checked) selectYear(input.value); };
+  });
+  const brand = $('#brandyear');
+  if (brand) brand.textContent = S.tahun || '';
+  const missing = PEMILU.length < CONTEST_ORDER.length
+    ? ` · ${CONTEST_ORDER.length - PEMILU.length} kontes legislatif belum tersedia`
+    : '';
+  const kicker = $('#yearnote');
+  if (kicker) kicker.textContent = `${PEMILU.length} kontes${missing}`;
+}
 function renderTabs() {
   $('#tabs').innerHTML = PEMILU.map(E =>
     `<button class="tab" role="tab" data-e="${E.id}" aria-selected="${E.id === S.pemilu}">
@@ -480,9 +616,10 @@ function fitProjection(featureCollection) {
 }
 async function loadGeoChunk(cache, key, folder) {
   if (cache.has(key)) return cache.get(key);
+  const gisDir = S.D.gisDir;
   const pending = (async () => {
     try {
-      const response = await fetch(`data/gis/${folder}/${encodeURIComponent(key)}.json`);
+      const response = await fetch(`${gisDir}/${folder}/${encodeURIComponent(key)}.json`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       return data && data.type === 'FeatureCollection' ? data : null;
@@ -552,7 +689,13 @@ async function drawGeo() {
 function renderLocator() {
   const P = provinceOf(S.sel), K = ancestorAt(S.sel, 2), locator = $('#locator');
   const collection = P && S.geoKab.get(P.key);
-  if (!P || !K || !collection || collection instanceof Promise) { locator.hidden = true; return; }
+  // Provinsi tanpa geometri, misalnya Luar Negeri, tetap punya chunk kabupaten
+  // yang kosong; fitExtent pada koleksi kosong menghasilkan proyeksi NaN.
+  if (!P || !K || !collection || collection instanceof Promise
+      || !Array.isArray(collection.features) || !collection.features.length) {
+    locator.hidden = true;
+    return;
+  }
   locator.hidden = false;
   $('#loclab').textContent = P.name + ' › ' + K.name;
   const selection = d3.select('#locsvg');
@@ -631,22 +774,32 @@ function coverageNote(node, result, choiceTotal) {
     ? ` Audit seluruh sumber kontes: ${fmt(anomalies.invalid_stats_row || 0)} baris metadata anomali, ` +
       `${fmt(anomalies.option_sum_ne_suara_sah || 0)} baris dengan Σ opsi ≠ suara sah, dan ` +
       `${fmt(anomalies.blank_result_row || 0)} baris hasil kosong; ` +
-      `${fmt(anomalies.outlier_vote_row || 0)} baris suara opsi ekstrem.`
+      `${fmt(anomalies.outlier_vote_row || 0)} baris suara opsi ekstrem.` +
+      (anomalies.administrasi_missing_row > 0
+        ? ` ${fmt(anomalies.administrasi_missing_row)} baris tidak memuat blok administrasi sama sekali, sehingga partisipasi tidak dapat dihitung di TPS tersebut.`
+        : '')
     : '';
+  // Catatan sumber ditulis oleh builder tahun yang bersangkutan; 2024 memakai
+  // catatan ini untuk menerangkan cakupan angka Sirekap yang tidak penuh.
+  const sourceNote = summary && summary.note ? ` <b>Catatan sumber:</b> ${esc(summary.note)}` : '';
   const sourceCoverage = node.lv <= 2
     ? `${fmt(result.covered)} dari ${fmt(result.total)} kecamatan memiliki rekaman kontes ini`
     : (result.present ? 'Rekaman kontes tersedia untuk wilayah ini' : 'Rekaman kontes tidak tersedia untuk wilayah ini');
   if (!result.present) {
     const P = provinceOf(node), chunkError = node.lv >= 3 && P && S.leafErrors.get(P.key);
     return `<div class="banner"><span>⚑</span><span><b>Cakupan sumber:</b> ${sourceCoverage}.${chunkError ? ` Chunk hasil desa gagal dimuat (${esc(chunkError)}).` : ''}
-      Tidak ada angka yang diisi atau diperkirakan.${globalAudit}</span></div>`;
+      Tidak ada angka yang diisi atau diperkirakan.${globalAudit}${sourceNote}</span></div>`;
   }
   const totalTps = statOf(result, 'tps') || 0;
   const validatedTps = statOf(result, 'validated-tps') || 0;
   const blankTps = statOf(result, 'blank-tps') || 0;
   const outlierVoteTps = statOf(result, 'outlier-vote-tps') || 0;
   const reportedTps = Math.max(0, totalTps - blankTps);
-  const rejectedTps = Math.max(0, totalTps - validatedTps - blankTps);
+  // Pada 2019 "tervalidasi" mensyaratkan baris tidak kosong, pada 2024 tidak:
+  // sebuah TPS bisa kosong angka hasilnya tetapi punya administrasi yang utuh.
+  // Karena itu selisih ini dihitung terhadap seluruh TPS, bukan terhadap TPS
+  // yang bukan kosong, dan tidak diklaim lepas dari hitungan TPS kosong.
+  const unvalidatedTps = Math.max(0, totalTps - validatedTps);
   const rawValid = statOf(result, 'suara-sah');
   const diff = rawValid == null ? null : choiceTotal - rawValid;
   const tpsText = totalTps > 0
@@ -658,9 +811,9 @@ function coverageNote(node, result, choiceTotal) {
   const voteOutlierText = outlierVoteTps > 0
     ? ` <b>${fmt(outlierVoteTps)} TPS memiliki suara opsi di atas 1.000</b> di luar Papua/luar negeri; angka CSV mentah dipertahankan dan dapat memengaruhi pemenang.`
     : '';
-  const anomalyText = rejectedTps > 0
-    ? ` <b>${fmt(rejectedTps)} TPS anomali</b> tidak dimasukkan ke lima total metadata partisipasi.`
-    : (totalTps > 0 ? ' Tidak ada TPS yang ditolak oleh pemeriksaan konsistensi metadata.' : '');
+  const anomalyText = unvalidatedTps > 0
+    ? ` <b>${fmt(unvalidatedTps)} TPS</b> tidak lolos pemeriksaan konsistensi metadata dan tidak dijumlahkan ke lima total partisipasi.`
+    : (totalTps > 0 ? ' Seluruh TPS lolos pemeriksaan konsistensi metadata.' : '');
   // Pilpres results come from a scrape that carries no registered-voter column;
   // DPT is recovered per TPS from a second, narrower source.  Where that donor
   // has no matching TPS the turnout metadata is genuinely absent, not zero.
@@ -670,7 +823,7 @@ function coverageNote(node, result, choiceTotal) {
   const diffText = diff && diff !== 0
     ? ` Jumlah perolehan opsi berbeda ${fmt(Math.abs(diff))} suara dari kolom suara-sah tervalidasi; total pilihan yang ditampilkan selalu Σ opsi.`
     : '';
-  return `<div class="banner"><span>⚑</span><span><b>Cakupan sumber:</b> ${sourceCoverage}. ${tpsText}${blankText}${voteOutlierText}${anomalyText}${dptText}${diffText}${globalAudit}</span></div>`;
+  return `<div class="banner"><span>⚑</span><span><b>Cakupan sumber:</b> ${sourceCoverage}. ${tpsText}${blankText}${voteOutlierText}${anomalyText}${dptText}${diffText}${globalAudit}${sourceNote}</span></div>`;
 }
 
 let showAll = false;
@@ -843,7 +996,7 @@ function exportCSV() {
   const link = document.createElement('a');
   const slug = node.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || node.key.toLowerCase();
   link.href = url;
-  link.download = `pemilu2019-${S.pemilu}-${slug}.csv`;
+  link.download = `pemilu${S.D.id}-${S.pemilu}-${slug}.csv`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
@@ -855,8 +1008,11 @@ function updateSourceNote() {
   const summary = S.sourceSummary && S.sourceSummary[S.pemilu];
   const sourceSize = summary
     ? `${fmt(summary.files)} file · ${fmt(summary.rows)} baris TPS`
-    : 'CSV KPU 2019';
-  $('#srcnote').textContent = `${S.nodes.size.toLocaleString('id-ID')} wilayah · ${coverage} · ${sourceSize} · GeoJSON lokal, batas diselaraskan ke hierarki 2019`;
+    : S.D.sourceNote;
+  const reported = summary && summary.total_tps
+    ? ` · ${fmt(summary.reported_tps)}/${fmt(summary.total_tps)} TPS berisi angka`
+    : '';
+  $('#srcnote').textContent = `Pemilu ${S.D.id} · ${S.nodes.size.toLocaleString('id-ID')} wilayah · ${coverage} · ${sourceSize}${reported} · GeoJSON lokal, ${S.D.geoNote}`;
 }
 let selectVersion = 0;
 async function select(node) {
@@ -878,45 +1034,120 @@ async function renderAll() {
   $('#zoombtns').style.display = S.hasGeoView ? '' : 'none';
   $('#gridwrap').hidden = S.hasGeoView;
   if (!S.hasGeoView) renderGrid();
-  $('#viewinfo').textContent = S.hasGeoView ? 'Peta geografis · batas selaras hierarki 2019' : 'Grid wilayah · GeoJSON tidak tersedia';
+  $('#viewinfo').textContent = S.hasGeoView ? `Peta geografis · ${S.D.geoNote}` : 'Grid wilayah · GeoJSON tidak tersedia';
   renderLocator();
   renderPanel();
   renderTable();
   updateSourceNote();
 }
 
-async function boot() {
+/* ── pemuatan dataset per tahun ──────────────────────────────────── */
+function loadingBox(text) {
+  let box = $('#loading');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'loading';
+    box.className = 'loading';
+    $('#viewport').appendChild(box);
+  }
+  box.textContent = text;
+  return box;
+}
+async function fetchJSON(url, label) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${label} HTTP ${response.status}`);
+  return response.json();
+}
+async function createBundle(dataset) {
+  const provinceGeo = fetchJSON(`${dataset.gisDir}/provinsi.json`, 'provinsi.json')
+    .catch(error => {
+      console.warn('GeoJSON provinsi gagal dimuat; memakai grid wilayah.', error);
+      return null;
+    });
+  const [raw, electionData, provinces] = await Promise.all([
+    fetchJSON(dataset.hierarchy, dataset.hierarchy),
+    fetchJSON(dataset.election, dataset.election),
+    provinceGeo
+  ]);
+  if (raw.schema !== 2) throw new Error(`Skema wilayah ${raw.schema || 'lama'} tidak didukung; bangun ulang data schema 2.`);
+  if (electionData.schema !== 2) throw new Error(`Skema hasil ${electionData.schema || 'lama'} tidak didukung; bangun ulang data schema 2.`);
+  saveBundle(S.active);
+  const bundle = blankBundle(dataset);
+  restoreBundle(bundle);
+  S.root = buildTree(raw);
+  installElectionData(electionData, dataset);
+  if (!PEMILU.length) throw new Error(`Tidak ada kontes Pemilu ${dataset.id} yang dapat dimuat.`);
+  S.geoProv = provinces;
+  S.sel = S.root;
+  buildIndex();
+  saveBundle(bundle);
+  S.bundles.set(dataset.id, bundle);
+  return bundle;
+}
+/* Wilayah dicocokkan lewat rantai nama, bukan kode: pemekaran Papua dan
+   penomoran ulang desa membuat kode 2019 dan 2024 tidak sebanding. Pencocokan
+   berhenti di tingkat terdalam yang masih ditemukan, jadi memilih satu desa di
+   2019 lalu berpindah ke 2024 setidaknya mendarat di kecamatan yang sama. */
+function nodeByNames(names) {
+  let node = S.root;
+  for (const name of names) {
+    const next = node.anak.find(child => child.name === name);
+    if (!next) break;
+    node = next;
+  }
+  return node;
+}
+let yearVersion = 0;
+async function selectYear(id, initial = false) {
+  const dataset = datasetById(id);
+  if (!initial && S.tahun === dataset.id) return;
+  const version = ++yearVersion;
+  const previous = S.active;
+  const names = S.sel ? chain(S.sel).slice(1).map(node => node.name) : [];
+  loadingBox(`Memuat data Pemilu ${dataset.id}…`);
   try {
-    const provinceGeo = fetch('data/gis/provinsi.json')
-      .then(response => {
-        if (!response.ok) throw new Error(`provinsi.json HTTP ${response.status}`);
-        return response.json();
-      })
-      .catch(error => {
-        console.warn('GeoJSON provinsi gagal dimuat; memakai grid wilayah.', error);
-        return null;
-      });
-    const [raw, electionData, provinces] = await Promise.all([
-      fetch('data/wilayah.json').then(response => { if (!response.ok) throw new Error(`wilayah.json HTTP ${response.status}`); return response.json(); }),
-      fetch('data/election2019.json').then(response => { if (!response.ok) throw new Error(`election2019.json HTTP ${response.status}`); return response.json(); }),
-      provinceGeo
-    ]);
-    if (raw.schema !== 2) throw new Error(`Skema wilayah ${raw.schema || 'lama'} tidak didukung; bangun ulang data schema 2.`);
-    if (electionData.schema !== 2) throw new Error(`Skema hasil ${electionData.schema || 'lama'} tidak didukung; bangun ulang data schema 2.`);
-    S.root = buildTree(raw);
-    installElectionData(electionData);
-    if (!PEMILU.length) throw new Error('Tidak ada kontes Pemilu 2019 yang dapat dimuat.');
-    S.geoProv = provinces;
-    S.sel = S.root;
-    buildIndex();
-    renderTabs();
-    initMap();
-    $('#loading').textContent = 'Merender peta…';
-    await renderAll();
-    $('#loading').remove();
+    const cached = S.bundles.get(dataset.id);
+    if (cached) { saveBundle(S.active); restoreBundle(cached); }
+    else await createBundle(dataset);
   } catch (error) {
     console.error(error);
-    $('#loading').textContent = 'Gagal memuat data: ' + error.message;
+    // Bundel yang gagal dibangun tidak pernah disimpan, jadi tahun sebelumnya
+    // dipulihkan utuh dan pengguna tidak terjebak pada state setengah jadi.
+    if (previous) restoreBundle(previous);
+    loadingBox(`Gagal memuat data ${dataset.id}: ${error.message}`);
+    renderYears();
+    return;
+  }
+  if (version !== yearVersion) return;
+  // Dua peralihan cepat dapat selesai di luar urutan; bundel yang menang harus
+  // yang diminta terakhir, bukan yang kebetulan selesai belakangan.
+  const target = S.bundles.get(dataset.id);
+  if (target && S.active !== target) { saveBundle(S.active); restoreBundle(target); }
+  // Pilihan opsi, urutan tabel, dan kerangka peta tidak sebanding antartahun.
+  S.fokus = 0;
+  S.sort = { k: 'v', d: -1 };
+  showAll = false;
+  S.mapViewKey = null;
+  S.mapViewNodeKey = null;
+  S.mapCollection = null;
+  S.sel = names.length ? nodeByNames(names) : S.root;
+  document.title = `Peta Hasil Pemilu Indonesia ${dataset.id}`;
+  renderYears();
+  renderTabs();
+  await select(S.sel);
+  const box = $('#loading');
+  if (box) box.remove();
+}
+
+async function boot() {
+  const requested = new URLSearchParams(location.search).get('tahun');
+  const startId = DATASETS.some(dataset => dataset.id === requested) ? requested : DEFAULT_YEAR;
+  try {
+    initMap();
+    await selectYear(startId, true);
+  } catch (error) {
+    console.error(error);
+    loadingBox('Gagal memuat data: ' + error.message);
   }
 
   $('#q').addEventListener('input', event => search(event.target.value));
@@ -928,6 +1159,13 @@ async function boot() {
     if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
     if ((event.key === 'Escape' || event.key === 'Backspace') && S.sel && S.sel.parent) { event.preventDefault(); select(S.sel.parent); }
     if (event.key === '/') { event.preventDefault(); $('#q').focus(); }
+    if (event.key === 't' || event.key === 'T') {
+      const order = DATASETS.map(dataset => dataset.id);
+      const next = order[(order.indexOf(S.tahun) + 1) % order.length];
+      event.preventDefault();
+      selectYear(next);
+      return;
+    }
     const index = ['1', '2', '3', '4'].indexOf(event.key);
     const tabs = document.querySelectorAll('.tab');
     if (index >= 0 && tabs[index]) tabs[index].click();
@@ -936,8 +1174,10 @@ async function boot() {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    PARTY_SPEC, CONTEST_ORDER, S, normalizeContests, buildTree, installElectionData,
-    parseEntry, combineResults, resultOf, leadersOf, winnerOf, isTie, marginOf, featureNode, columnKey
+    PARTY_SPEC, PARTY_SPEC_2024, PASLON_2019, PASLON_2024, DATASETS, CONTEST_ORDER,
+    CONTEST_NAMES, S, normalizeContests, buildTree, installElectionData,
+    parseEntry, combineResults, resultOf, leadersOf, winnerOf, isTie, marginOf, featureNode, columnKey,
+    selectYear, select, nodeByNames
   };
 }
 if (typeof document !== 'undefined') boot();

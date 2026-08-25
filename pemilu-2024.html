@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Peta Hasil Pemilu Indonesia 2019</title>
+<title>Peta Hasil Pemilu Indonesia</title>
 <link rel="stylesheet" href="assets/modernist/styles.css">
 <script src="https://unpkg.com/d3@7.9.0/dist/d3.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
 <style>
@@ -20,6 +20,10 @@
   .mast-sub{font-size:10px;letter-spacing:.1em;text-transform:uppercase;
         color:color-mix(in srgb,var(--color-text) 55%,transparent)}
   .spacer{margin-left:auto}
+  .yearpick{display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .yearpick .seg-opt{padding:4px 11px;font-size:13px;font-family:var(--font-heading);font-weight:800}
+  .yearpick .mast-sub{text-transform:none;letter-spacing:0;font-size:10.5px}
+  @media (max-width:760px){.yearpick #yearnote{display:none}}
   .searchwrap{position:relative;width:min(300px,34vw)}
   .searchwrap .input{height:32px;min-height:32px;font-size:13px}
   .results{position:absolute;top:36px;left:0;right:0;z-index:60;max-height:340px;overflow:auto;
@@ -191,7 +195,12 @@
 <body>
 <div id="app">
   <header class="mast">
-    <div class="mast-brand"><span>PEMILU <b>2019</b></span><span class="mast-sub">Peta hasil berjenjang</span></div>
+    <div class="mast-brand"><span>PEMILU <b id="brandyear">—</b></span><span class="mast-sub">Peta hasil berjenjang</span></div>
+    <div class="yearpick">
+      <span class="modelab">Tahun</span>
+      <div class="seg" id="yearseg" role="group" aria-label="Tahun pemilu"></div>
+      <span class="mast-sub" id="yearnote"></span>
+    </div>
     <div class="spacer"></div>
     <div class="searchwrap">
       <input class="input" id="q" type="search" placeholder="Cari provinsi, kabupaten, kecamatan, desa…" autocomplete="off">

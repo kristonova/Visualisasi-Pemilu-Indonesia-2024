@@ -29,24 +29,35 @@ def main() -> None:
     thread.start()
     base_url = f"http://127.0.0.1:{server.server_port}"
     try:
-        assert b"app.js" in fetch(base_url, "index.html")
-        assert b"data/election2019/" in fetch(base_url, "app.js")
+        index = fetch(base_url, "index.html")
+        assert b"app.js" in index
+        assert b'id="yearseg"' in index, "penukar tahun harus ada di halaman"
+        app = fetch(base_url, "app.js")
+        assert b"'data/election2019'" in app and b"'data/election2024'" in app
+        assert b"'data/gis'" in app and b"'data/gis2024'" in app
         assert b"--color-accent" in fetch(base_url, "assets/modernist/styles.css")
 
-        election = json.loads(fetch(base_url, "data/election2019.json"))
-        assert election["schema"] == 2
-        assert fetch(base_url, "data/election2019/P1.json")
-
-        provinces = json.loads(fetch(base_url, "data/gis/provinsi.json"))
-        assert provinces["type"] == "FeatureCollection"
-        assert len(provinces["features"]) == 34
-        assert fetch(base_url, "data/gis/kab/P1.json")
+        # Setiap tahun harus benar-benar dapat dilayani, bukan hanya disebut
+        # dalam kode: hierarki, chunk hasil provinsi pertama, dan GeoJSON.
+        for election_file, leaf, gis_dir, kab, province_count in (
+            ("data/election2019.json", "data/election2019/P1.json", "data/gis", "P1", 34),
+            ("data/election2024.json", "data/election2024/11.json", "data/gis2024", "11", 38),
+        ):
+            election = json.loads(fetch(base_url, election_file))
+            assert election["schema"] == 2
+            assert fetch(base_url, leaf)
+            provinces = json.loads(fetch(base_url, f"{gis_dir}/provinsi.json"))
+            assert provinces["type"] == "FeatureCollection"
+            assert len(provinces["features"]) == province_count, (
+                f"{gis_dir}: {len(provinces['features'])} provinsi, diharapkan {province_count}"
+            )
+            assert fetch(base_url, f"{gis_dir}/kab/{kab}.json")
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=10)
 
-    print("test_http_smoke.py: app, election chunks, and GIS served successfully")
+    print("test_http_smoke.py: app, election chunks, and GIS served for 2019 and 2024")
 
 
 if __name__ == "__main__":

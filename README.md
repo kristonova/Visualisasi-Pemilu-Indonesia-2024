@@ -1,144 +1,211 @@
-# Visualisasi Hasil Pemilu Indonesia 2019
+# Visualisasi Hasil Pemilu Indonesia 2019 dan 2024
 
-Aplikasi web statis untuk menjelajahi hasil Pemilu Indonesia 2019 dari tingkat nasional hingga kelurahan/desa. Seluruh angka yang ditampilkan berasal dari CSV hasil scraping KPU yang tersedia; aplikasi tidak membuat hasil sintetis, tidak mengimputasi wilayah yang tidak tercakup, dan tidak mencocokkan hasil berdasarkan nama wilayah yang ambigu.
+Aplikasi web statis interaktif untuk menjelajahi data hasil Pemilihan Umum Indonesia dari tingkat nasional hingga kelurahan/desa, dilengkapi fitur pengalih tahun antara **2019** dan **2024**. Seluruh angka yang disajikan bersumber langsung dari data publikasi KPU hasil *scraping*; aplikasi tidak merekayasa data sintetis, tidak melakukan estimasi/imputasi pada wilayah yang tidak memiliki data, dan tidak melakukan pencocokan paksa pada nama wilayah yang ambigu.
 
-**Dashboard live:** [kristonova.github.io/Visualisasi-Pemilu-Indonesia-2024](https://kristonova.github.io/Visualisasi-Pemilu-Indonesia-2024/)
+**Dashboard Publik:** [kristonova.github.io/Visualisasi-Pemilu-Indonesia-2024](https://kristonova.github.io/Visualisasi-Pemilu-Indonesia-2024/)
 
-Audit teknis yang lebih rinci tersedia di [`AUDIT_2019.md`](AUDIT_2019.md), [`data/audit2019.json`](data/audit2019.json), dan [`data/gis/audit2019.json`](data/gis/audit2019.json).
+Dokumentasi audit teknis yang mendalam tersedia di [`AUDIT_2019.md`](AUDIT_2019.md), [`AUDIT_2024.md`](AUDIT_2024.md), serta berkas audit *machine-readable* pada `data/audit2019.json`, `data/gis/audit2019.json`, `data/audit2024.json`, dan `data/gis2024/audit2024.json`.
 
-Visualisasi memuat empat kontes yang benar-benar tersedia dalam kumpulan sumber:
+## Perbandingan Pemilu 2019 dan 2024
 
-- Pilpres;
-- DPR RI;
-- DPRD Provinsi; dan
-- DPRD Kabupaten/Kota.
+Fitur pengalih **Tahun** pada bilah navigasi atas berpindah di antara dua dataset yang sepenuhnya terpisah. Kedua dataset tersebut memiliki perbedaan skema kode wilayah (*key*), struktur geometri peta, hingga daftar kontes pemilihan. Oleh karena itu, saat tahun dialihkan, aplikasi akan memuat ulang berkas data secara utuh, bukan sekadar menimpa angka di atas peta tahun sebelumnya.
 
-Tidak ada tab DPD karena kumpulan sumber tidak memiliki CSV hasil DPD. Berkas `pemilu-2024.html` dipertahankan sebagai nama entry lama, tetapi isinya identik dengan `index.html` dan seluruh antarmukanya menampilkan Pemilu 2019.
+| Parameter | Pemilu 2019 | Pemilu 2024 |
+| --- | --- | --- |
+| Kontes Pemilihan | Pilpres, DPR RI, DPRD Provinsi, DPRD Kab/Kota | Pilpres |
+| Sumber Data | Ekspor KawalPemilu + *scrape* portal KPU lama | *Scrape* portal KPU Sirekap |
+| Kode Wilayah (*Key*) | Token hierarki KPU 2019 (contoh: `P1.1207.1208.1209`) | Kode standar Kemendagri (contoh: `11.01.01.2015`) |
+| Pembagian Provinsi | 34 Provinsi + `+Luar Negeri` | 38 Provinsi + Luar Negeri |
+| Peta Batas Wilayah | Rekonstruksi multi-sumber selaras hierarki 2019 | Batas desa Kemendagri edisi Juli 2026 |
+| Kelengkapan Data TPS | 806.583 TPS Pilpres (100% memuat data angka) | 645.836 dari 823.378 TPS memuat data angka (78,4%) |
 
-## Fitur
+Hal-hal penting yang perlu diperhatikan saat membandingkan kedua periode:
 
-- Drill-down Nasional → Provinsi → Kabupaten/Kota → Kecamatan → Kelurahan/Desa.
-- Peta GeoJSON lokal dengan resolver eksak melalui `properties.key`.
-- Fallback grid jika geometri untuk suatu tingkat tidak tersedia.
-- Mode warna pemenang, margin, perolehan opsi tertentu, dan partisipasi tervalidasi.
-- Penanganan eksplisit untuk hasil seri, hasil tidak tersedia, TPS dengan hasil kosong, dan metadata TPS anomali.
-- Pencarian seluruh tingkat wilayah, breadcrumb, tooltip, panel analisis, dan tabel yang menampilkan seluruh opsi/partai.
-- Lazy loading hasil desa per provinsi dan geometri per wilayah agar startup tetap ringan.
-- Ekspor CSV UTF-8 untuk anak wilayah aktif, termasuk indikator ketersediaan rekaman, `blank-tps`, dan `outlier-vote-tps`.
+- **Kode wilayah tidak berhubungan langsung.** Wilayah Papua dimekarkan menjadi enam provinsi setelah tahun 2019, dan banyak desa/kelurahan mengalami penomoran ulang kode wilayah. Oleh sebab itu, mekanisme peralihan tahun mencocokkan wilayah berdasarkan penelusuran nama hierarki secara bertingkat hingga tingkat terdalam yang ditemukan, bukan berdasarkan kode wilayah.
+- **Tingkat kelengkapan data berbeda.** Pada Pemilu 2024, sistem Sirekap KPU sempat menghentikan publikasi konversi angka untuk sebagian TPS dan hanya menampilkan pindaian formulir Model C1. Dengan demikian, total suara 2024 pada dashboard ini murni merupakan akumulasi dari TPS yang memuat angka hasil. Rincian selengkapnya dapat dibaca di [`AUDIT_2024.md`](AUDIT_2024.md) serta tercantum pada panel informasi dan catatan kaki aplikasi.
+- **Konsistensi visual warna kandidat.** Warna biru secara konsisten digunakan untuk pasangan Prabowo Subianto (nomor urut 02 pada kedua pemilu), sedangkan warna merah digunakan untuk pasangan yang diusung oleh PDI Perjuangan (Jokowi–Ma'ruf pada 2019, Ganjar–Mahfud pada 2024). Langkah ini menjaga kesinambungan visual agar pergantian tahun tidak mengubah makna warna secara membingungkan.
+
+Data pemilihan DPD tidak tersedia untuk kedua periode karena sumber data mentah tidak memuat hasil DPD. Untuk Pemilu 2024, data pemilihan legislatif (DPR RI dan DPRD) belum dimuat, namun struktur datanya telah disiapkan (lihat [Menambahkan Data Pemilihan Legislatif 2024](#menambahkan-data-pemilihan-legislatif-2024)). Berkas `pemilu-2024.html` tetap dipertahankan untuk kompatibilitas tautan lama dengan isi yang identik dengan `index.html`. Kedua berkas tersebut mendukung parameter URL `?tahun=2019` maupun `?tahun=2024`.
+
+## Fitur Utama
+
+- **Peralihan Tahun Fleksibel (2019/2024):** Dilengkapi mekanisme pemuatan bertahap (*lazy loading*); data yang sudah diunduh disimpan dalam memori (*cache*) sehingga tidak perlu diunduh ulang saat berpindah tahun.
+- **Navigasi Berjenjang (*Drill-Down*):** Penelusuran hierarki lengkap dari tingkat Nasional → Provinsi → Kabupaten/Kota → Kecamatan → Kelurahan/Desa.
+- **Peta Interaktif GeoJSON Lokal:** Pemetaan presisi tinggi dengan pencocokan kode wilayah eksak melalui `properties.key`.
+- **Tampilan Cadangan Berbasis Kisi (*Grid Fallback*):** Otomatis menyajikan tata letak kisi (*grid*) jika data batas poligon pada tingkat wilayah terkait tidak tersedia.
+- **Beragam Mode Visualisasi Tematik:** Pilihan visualisasi peta pemenang, margin kemenangan, perolehan persentase suara kandidat/partai, serta tingkat partisipasi pemilih tervalidasi.
+- **Penanganan Data Khusus & Transparan:** Mengakomodasi perolehan suara seri, data tidak tersedia, TPS dengan hasil kosong (*blank*), serta penandaan anomali data.
+- **Alat Bantu Lengkap:** Fitur pencarian cepat di semua tingkatan wilayah, navigasi rekam jejak (*breadcrumb*), *tooltip* interaktif, panel ringkasan analisis, dan tabel rekapitulasi perolehan suara.
+- **Kinerja Optimal & Ringan:** Pemuatan data perolehan suara tingkat desa per provinsi dan potongan geometri wilayah dilakukan sesuai kebutuhan (*on-demand*).
+- **Ekspor Data CSV (UTF-8):** Menyediakan fitur ekspor data sub-wilayah aktif, lengkap dengan indikator kelengkapan data, jumlah `blank-tps`, dan `outlier-vote-tps`.
 
 Pintasan keyboard:
 
 | Tombol | Fungsi |
 | --- | --- |
-| `1`–`4` | Memilih kontes |
-| `/` | Memfokuskan pencarian |
-| `Esc` atau `Backspace` | Naik satu tingkat wilayah |
+| `T` | Berpindah tahun pemilu (2019 ↔ 2024) |
+| `1`–`4` | Memilih jenis kontes pemilihan |
+| `/` | Fokus ke kolom pencarian |
+| `Esc` atau `Backspace` | Kembali ke tingkat wilayah di atasnya |
 
-## Audit sumber hasil pemilu
+## Audit Data Pemilu 2019
 
-Dua scrape menjadi sumber, digabung lewat **ID wilayah KPU resmi**, bukan lewat nama. Scrape KPU legacy memasok DPR RI dan kedua DPRD serta menjadi satu-satunya pemasok DPT; ekspor KawalPemilu per provinsi memasok Pilpres, karena batch Pilpres pada scrape legacy hanya pernah mencakup 15 dari 35 kelompok provinsi.
+Data Pemilu 2019 dihimpun dari dua sumber hasil *scraping* yang digabungkan secara ketat menggunakan **ID wilayah resmi KPU**, bukan berdasarkan kesamaan nama. Data *scraping* KPU lama memasok perolehan suara DPR RI, DPRD Provinsi, DPRD Kabupaten/Kota, dan menjadi satu-satunya sumber DPT. Sementara itu, data ekspor KawalPemilu per provinsi digunakan untuk Pilpres, mengingat data Pilpres pada *scraping* KPU lama hanya mencakup 15 dari 35 wilayah provinsi/luar negeri.
 
-Pipeline menginventarisasi **1.989 CSV** berukuran total 1.125.400.831 byte, ditambah 8.011 berkas node hierarki (26.200.573 byte):
+Alur pemrosesan data mengolah **1.989 berkas CSV** (total ukuran ~1,12 GB) serta 8.011 berkas struktur hierarki wilayah (total ~26,2 MB):
 
-- 1.640 CSV hasil;
-- 342 CSV Pilpres legacy yang kini hanya memasok DPT;
-- 7 CSV referensi/pendukung; dan
-- 2.468.788 rekaman hasil valid yang seluruhnya masuk ke artefak visualisasi, tanpa satu pun ditolak.
+- 1.640 berkas CSV data perolehan suara;
+- 342 berkas CSV Pilpres versi lama yang kini hanya dimanfaatkan untuk pemulihan DPT;
+- 7 berkas CSV referensi dan pendukung; serta
+- 2.468.788 baris data hasil yang valid, seluruhnya berhasil diproses ke dalam visualisasi tanpa ada data yang terbuang.
 
-Sebanyak **204.453 rekaman valid memiliki seluruh kolom hasil kosong**. Rekaman tersebut tetap dihitung sebagai rekaman sumber dan disimpan melalui statistik `blank-tps`; kolom kosong tidak dipresentasikan sebagai angka nol yang dilaporkan. Satu pseudo-record berisi karakter NUL dicatat pada `dpt_backfill.counts.invalid_record`.
+Sebanyak **204.453 baris data tercatat memiliki kolom perolehan suara yang kosong**. Data tersebut tetap diperhitungkan dalam statistik sumber sebagai `blank-tps` dan tidak diubah menjadi angka nol agar tidak menimbulkan salah tafsir. Satu baris data rusak (*pseudo-record*) yang memuat karakter NUL dicatat secara terpisah pada `dpt_backfill.counts.invalid_record`.
 
-| Kontes | CSV hasil | Rekaman valid | Kecamatan tercakup | Desa tercakup | Rekaman hasil kosong |
+| Jenis Pemilihan | Berkas CSV | Baris Valid | Kecamatan | Desa/Kelurahan | Baris Hasil Kosong |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Pilpres | 35 | 806.583 | 7.246 | 82.342 | 0 |
 | DPR RI | 138 | 35.537 | 1.211 | 10.528 | 5.771 |
 | DPRD Provinsi | 734 | 813.336 | 7.331 | 83.529 | 79.093 |
 | DPRD Kabupaten/Kota | 733 | 813.332 | 7.330 | 83.528 | 119.589 |
 
-Total Pilpres mencapai 84.298.880 suara 01 dan 68.221.284 suara 02, yaitu 98,5% dan 99,4% dari angka resmi KPU. Rasionya 98–100% di setiap provinsi **kecuali Papua** (01: 71,1%, 02: 61,0%), karena SITUNG tidak pernah merampungkan distrik sistem noken; kabupaten ASMAT dan kecamatan PANTE BIDARI tidak ada sama sekali. Seluruh 85 kecamatan tanpa hasil Pilpres terdaftar pada `coverage_gap.entries`.
+Akumulasi suara Pilpres dalam dataset ini mencapai 84.298.880 untuk pasangan 01 dan 68.221.284 untuk pasangan 02 (setara 98,5% dan 99,4% dari perolehan suara resmi KPU). Persentase ketercakupan berada pada rentang 98–100% di hampir seluruh provinsi, **kecuali Provinsi Papua** (01: 71,1% dan 02: 61,0%). Hal ini terjadi karena sistem SITUNG KPU pada saat itu tidak menuntaskan rekapitulasi untuk distrik-distrik yang menerapkan sistem noken; data Kabupaten Asmat dan Kecamatan Pante Bidari bahkan tidak tercatat sama sekali. Sebanyak 85 kecamatan yang tidak memiliki data Pilpres dicatat secara rinci pada entri `coverage_gap.entries`.
 
-Ekspor KawalPemilu tidak memuat kolom pemilih terdaftar, sehingga DPT dipulihkan per TPS dari scrape legacy lewat kunci `(id_kelurahan, nomor_tps)`: 497.941 dari 806.583 TPS mendapat pasangan, penuh di 15 provinsi lama dan nol di luar itu. **Partisipasi Pilpres karena itu bukan angka nasional**, dan hal itu dinyatakan pada panel maupun catatan cakupan.
+Karena berkas ekspor KawalPemilu tidak menyertakan kolom Daftar Pemilih Tetap (DPT), data DPT direkonstruksi per TPS dari *scrape* lama menggunakan kunci relasi `(id_kelurahan, nomor_tps)`. Dari total 806.583 TPS, sebanyak 497.941 TPS berhasil dipetakan (lengkap di 15 provinsi lama dan tidak tersedia di provinsi lainnya). Oleh karena itu, **angka partisipasi Pilpres 2019 bukan representasi nasional**, dan keterangan ini dicantumkan secara transparan pada panel informasi maupun catatan cakupan data.
 
-Hierarki gabungan sumber terdiri dari 35 kelompok tingkat provinsi—34 provinsi dalam negeri dan `+Luar Negeri`—644 unit tingkat kabupaten/kota, 7.331 kecamatan, dan 83.529 kelurahan/desa. Unit luar negeri berada dalam hierarki dan hasil, tetapi tidak mempunyai geometri administratif Indonesia.
+Struktur wilayah gabungan terdiri atas 35 wilayah tingkat provinsi (34 provinsi dalam negeri ditambah `+Luar Negeri`), 644 satuan kabupaten/kota, 7.331 kecamatan, dan 83.529 kelurahan/desa. Wilayah Luar Negeri tetap terdaftar dalam hierarki dan memiliki data perolehan suara, namun tidak memiliki geometri batas wilayah administratif peta Indonesia.
 
-Kunci setiap tingkat, termasuk kelurahan, adalah ID wilayah KPU resmi; sebelumnya kunci desa hanya posisi alfabetis di dalam kecamatan sehingga bergeser tiap kali data sumber berubah. Kolom `id` pada CSV legacy ternyata sudah merupakan rangkaian ID resmi (`1149217531776900003704` = `1`·`1492`·`1753`·`1776`·`900003704`), dan seluruh baris berhasil diuraikan. Nama tampilan tetap memakai ejaan CSV hasil karena itulah yang dipakai pipeline GIS untuk mencocokkan geometri; 137 perbedaan ejaan terhadap pohon KPU tercatat pada `name_aliases`.
+Setiap tingkatan wilayah menggunakan ID resmi KPU sebagai kode pengenal unik (sebelumnya tingkat desa hanya menggunakan urutan abjad dalam kecamatan yang rentan bergeser ketika data sumber berubah). Kolom `id` pada CSV lama merupakan gabungan bertingkat dari ID resmi KPU (misalnya `1149217531776900003704` yang diurai menjadi `1`·`1492`·`1753`·`1776`·`900003704`), dan seluruh baris berhasil dipetakan secara akurat. Penamaan wilayah pada tampilan antarmuka tetap mengikuti ejaan CSV hasil agar selaras dengan pencocokan geometri GIS; 137 variasi ejaan dibandingkan pohon data KPU dicatat dalam `name_aliases`.
 
-Angka opsi suara dipertahankan sesuai sumber. Metadata partisipasi hanya dijumlahkan ke total tervalidasi jika satu baris lolos pemeriksaan konsistensi, termasuk syarat pengguna hak pilih tidak melebihi pemilih terdaftar. Nilai mentah dan alasan penolakan tetap dicatat dalam audit. Ketidaksamaan antara jumlah opsi dan kolom `suara-sah`, nilai ekstrem, duplikasi natural TPS, berkas kosong, serta anomali lain tidak diperbaiki secara diam-diam. Angka opsi di atas 1.000 pada TPS non-Papua/non-luar-negeri dipertahankan tetapi ditandai melalui `outlier-vote-tps` karena dapat memengaruhi pemenang lokal.
+Perolehan suara setiap opsi dipertahankan persis sesuai data sumber aslinya. Data partisipasi pemilih hanya diakumulasikan ke dalam total tervalidasi apabila baris data terkait lolos uji konsistensi (termasuk syarat bahwa jumlah pengguna hak pilih tidak boleh melebihi jumlah pemilih terdaftar). Seluruh nilai mentah beserta alasan anomali dicatat dalam laporan audit. Ketidaksesuaian antara jumlah suara kandidat dengan kolom `suara-sah`, angka ekstrem, duplikasi nomor TPS dari sumber, maupun berkas kosong tidak dimodifikasi secara sepihak. Perolehan suara di atas 1.000 pada satu TPS non-Papua dan non-Luar Negeri tetap dipertahankan, namun ditandai sebagai `outlier-vote-tps` karena berpotensi mendistorsi penentuan pemenang di tingkat lokal.
 
-### Artefak schema 2
+## Audit Data Pemilu 2024
 
-| Path | Isi |
+Data Pemilu 2024 bersumber tunggal dari hasil *scraping* sistem **Sirekap KPU** pada direktori `data_pilpres/<kode-provinsi>/<kode-kabkot>.json` dari repositori [`scrapping-pemilu-2024`](https://github.com/). Seluruh tingkat kelurahan/desa telah menggunakan kode wilayah resmi Kemendagri, sehingga proses pengolahan data 2024 tidak memerlukan pencocokan nama (*name matching*).
+
+Alur pemrosesan membaca **643 berkas JSON** (sekitar 978 MB), 83.860 kelurahan/desa, dan **823.378 data TPS**. Setiap berkas sumber didokumentasikan lengkap dengan ukuran dan *checksum* SHA-256 pada `data/audit2024.json`.
+
+**Catatan Penting:** Sebanyak **177.542 TPS (21,6%) sama sekali tidak memuat angka perolehan suara** dan hanya menyertakan tautan foto formulir Model C1. Hal ini terjadi karena KPU menghentikan publikasi konversi diagram/angka Sirekap pada awal Maret 2024. Data TPS tersebut tetap dihitung dalam agregat sebagai `blank-tps` dan tidak diubah menjadi angka nol.
+
+| Parameter | Nilai / Jumlah |
+| --- | ---: |
+| Total Data TPS Terdata | 823.378 |
+| TPS Memiliki Data Angka | 645.836 (78,4%) |
+| TPS Lolos Validasi Metadata (`validated-tps`) | 494.311 (60,0%) |
+| Total Suara 01 Anies–Muhaimin | 31.377.721 |
+| Total Suara 02 Prabowo–Gibran | 75.339.817 |
+| Total Suara 03 Ganjar–Mahfud | 21.370.222 |
+| Total Suara Seluruh Paslon | 128.087.760 |
+
+Ketiadaan data tabulasi ini **tidak terdistribusi secara merata**. Ketercakupan data bervariasi dari 94,8% di Bengkulu hingga hanya 0,1% di Papua Pegunungan. Bahkan, enam provinsi di Pulau Papua seluruhnya memiliki cakupan di bawah 41%. Akibatnya, visualisasi peta 2024 untuk wilayah Indonesia Timur tidak dapat dianggap sebagai representasi perolehan suara final. Rincian tabel cakupan per provinsi tersedia di [`AUDIT_2024.md`](AUDIT_2024.md).
+
+Kriteria validasi data 2024 mengikuti standar 2019 dengan satu pengecualian: aturan `total-pengguna ≤ total-pemilih` **tidak diterapkan**. Hal ini dikarenakan kolom `total-pemilih` pada Sirekap hanya mencatat DPT, sedangkan `total-pengguna` mencakup pemilih pindahan (DPTb) dan pemilih tambahan (DPK) yang secara definisi berada di luar DPT. Sebanyak 13.008 TPS tercatat memiliki jumlah pengguna suara melebihi DPT; kondisi ini dicatat sebagai `pengguna_gt_pemilih` dalam audit dan datanya tetap dipertahankan.
+
+### Format dan Skema Data (Schema v2)
+
+Kedua dataset menggunakan struktur kontrak data (Schema v2) yang seragam; perbedaan hanya terletak pada prefiks kode wilayah, daftar jenis pemilihan, dan jumlah pilihan/kandidat.
+
+| Berkas | Isi Dokumen |
 | --- | --- |
-| `data/wilayah.json` | Hierarki lengkap KPU 2019 dan daftar empat kontes |
-| `data/election2019.json` | Metadata kontes, sembilan statistik, ringkasan sumber, dan agregat eksak per kecamatan |
-| `data/election2019/P<kode>.json` | 35 chunk hasil per kelurahan/desa yang dimuat sesuai provinsi aktif |
-| `data/audit2019.json` | Inventaris berkas, ukuran, SHA-256, cakupan, total sumber/output, dan contoh anomali |
+| `data/wilayah.json` | Hierarki lengkap wilayah KPU 2019 dan daftar 4 kontes pemilihan |
+| `data/election2019.json` | Metadata kontes, sembilan ringkasan statistik, dan data agregat tingkat kecamatan |
+| `data/election2019/P<kode>.json` | 35 *chunk* hasil per kelurahan/desa yang dimuat sesuai provinsi aktif |
+| `data/audit2019.json` | Inventaris berkas, ukuran, SHA-256, cakupan wilayah, total suara, dan log anomali |
+| `data/wilayah2024.json` | Hierarki wilayah Kemendagri 2024, `key_prefix` kosong, dan daftar kontes 2024 |
+| `data/election2024.json` | Metadata kontes, sembilan ringkasan statistik, dan data agregat tingkat kecamatan |
+| `data/election2024/<kode>.json` | 39 *chunk* hasil per kelurahan/desa (satu berkas per provinsi) |
+| `data/audit2024.json` | Inventaris 643 berkas sumber, SHA-256, total mentah, dan rekapitulasi anomali |
 
-Sembilan statistik dalam schema adalah `total-pemilih`, `total-pengguna`, `suara-total`, `suara-sah`, `suara-tidak-sah`, `tps`, `validated-tps`, `blank-tps`, dan `outlier-vote-tps`. Setiap entri kontes berbentuk pasangan array suara dan array statistik; entri `null` berarti kontes tersebut memang tidak tersedia untuk wilayah itu.
+Sembilan indikator statistik dalam skema data meliputi `total-pemilih`, `total-pengguna`, `suara-total`, `suara-sah`, `suara-tidak-sah`, `tps`, `validated-tps`, `blank-tps`, dan `outlier-vote-tps`. Setiap entri pemilihan disimpan dalam format pasangan larik (*array*) perolehan suara dan larik statistik. Nilai `null` menandakan bahwa jenis pemilihan terkait tidak tersedia untuk wilayah tersebut.
 
-## GeoJSON dan keselarasan historis
+Identifikasi kolom pilihan menggunakan penamaan berbasis posisi: `pemilih-1`/`pemilih-2` untuk Pilpres 2019, `paslon-1` s.d. `paslon-3` untuk Pilpres 2024, serta nama partai politik untuk pemilihan legislatif 2019.
 
-Semua geometri aplikasi dibaca dari `data/gis/`; tidak ada atlas wilayah yang diunduh saat runtime. Kontrak loader adalah:
+### Menambahkan Data Pemilihan Legislatif 2024
 
-| Path | Tingkat fitur |
+Struktur pendukung untuk DPR RI, DPRD Provinsi, dan DPRD Kabupaten/Kota 2024 telah disiapkan pada `app.js`. Objek `PARTY_SPEC_2024` telah mendefinisikan 24 partai peserta Pemilu 2024 lengkap beserta nomor urutnya, dengan konvensi penamaan kolom **`partai-<nomor urut>`**. Untuk mengintegrasikan data legislatif 2024 di masa mendatang, langkah-langkah yang perlu dilakukan:
+
+1. Menetapkan `vote_columns` sebagai `["partai-1", …, "partai-24"]` (atau subset partai nasional untuk wilayah di luar Aceh);
+2. Menambahkan kontes `dpr`, `dprdprov`, dan/atau `dprdkab` ke dalam `data/election2024.json` serta ke setiap berkas *chunk* desa dengan urutan indeks kontes yang konsisten; dan
+3. Mendaftarkan ID kontes yang sama ke dalam larik `contests` pada `data/wilayah2024.json` serta ke konfigurasi dataset 2024 di `app.js`.
+
+Elemen antarmuka seperti tab pemilihan, legenda warna, tabel rincian, dan fitur ekspor CSV akan menyesuaikan secara otomatis. Jika terdapat nama kolom yang belum dikenali, sistem akan menampilkannya melalui *fallback* `unknownOption()` sehingga kekeliruan penamaan data dapat langsung terdeteksi.
+
+## Data Geospasial (GeoJSON)
+
+Seluruh data geometri peta dimuat langsung dari dalam repositori tanpa mengunduh atlas eksternal saat aplikasi berjalan (*runtime*). Mekanisme pemuatan bekerja identik untuk kedua tahun, dengan direktori utama `data/gis/` untuk Pemilu 2019 dan `data/gis2024/` untuk Pemilu 2024:
+
+| Pola Lokasi Berkas | Tingkat Wilayah Administratif |
 | --- | --- |
-| `data/gis/provinsi.json` | Provinsi |
-| `data/gis/kab/<provinceKey>.json` | Kabupaten/kota dalam satu provinsi |
-| `data/gis/kec/<regencyKey>.json` | Kecamatan dalam satu kabupaten/kota |
-| `data/gis/desa/<districtKey>.json` | Kelurahan/desa dalam satu kecamatan |
+| `<gisDir>/provinsi.json` | Tingkat Provinsi |
+| `<gisDir>/kab/<provinceKey>.json` | Tingkat Kabupaten/Kota dalam satu provinsi |
+| `<gisDir>/kec/<regencyKey>.json` | Tingkat Kecamatan dalam satu kabupaten/kota |
+| `<gisDir>/desa/<districtKey>.json` | Tingkat Kelurahan/Desa dalam satu kecamatan |
 
-Setiap fitur yang dapat dipilih harus mempunyai `properties.key` yang sama persis dengan key pada `data/wilayah.json`. Resolver nama/fuzzy dan indeks GIS lama tidak digunakan.
+Setiap fitur wilayah dalam berkas GeoJSON wajib memiliki atribut `properties.key` yang cocok persis dengan kode pada hierarki data tahun terkait. Sistem tidak menggunakan pencocokan perkiraan (*fuzzy matching*) maupun indeks nama lama.
 
-Koleksi `SHP GIS/` tidak menyediakan satu snapshot polygon yang tepat pada hari pemungutan suara 2019. Pipeline karena itu memakai batas Kemendagri 2018 dan GeoPackage 2020 berbasis spasial 2017 sebagai sumber utama. Untuk desa yang hanya dapat dikenali lewat layer BIG, kode administrasi resmi yang unik dipakai untuk mengambil kembali geometri historis dalam kabupaten KPU yang sama. Jika bridge itu gagal, polygon BIG dipakai dari ekstrak yang paling dekat dengan 2019 lebih dahulu—Maret 2020, baru Mei 2023—dan hanya bila UUPP fitur tidak melewati 2019 atau tahunnya memang tidak tersedia. Geometri diselaraskan kembali ke hierarki KPU 2019, termasuk penggabungan wilayah Papua hasil pemekaran setelah 2019 ke induknya pada struktur 2019.
+### Pemetaan 2019: Rekonstruksi Historis
 
-Hasil ini adalah rekonstruksi batas yang selaras secara historis, bukan klaim snapshot resmi tunggal per 17 April 2019. Build terakhir menghasilkan cakupan berikut untuk 34 provinsi domestik:
+Karena tidak tersedianya berkas *shapefile* tunggal yang memotret batas wilayah persis pada hari pemungutan suara Pemilu 2019, batas wilayah direkonstruksi menggunakan data batas Kemendagri 2018 serta GeoPackage 2020 (berbasis spasial 2017) sebagai rujukan utama. Untuk desa yang hanya teridentifikasi pada layer Badan Informasi Geospasial (BIG), kode wilayah unik digunakan untuk menjembatani geometri historis dalam kabupaten KPU yang bersangkutan. Jika jembatan kode tersebut tidak ditemukan, poligon BIG diambil dari rilis terdekat dengan 2019 (Maret 2020, disusul Mei 2023), dengan syarat tahun dasar pembentukan wilayah (UUPP) tidak melebihi 2019. Seluruh geometri diselaraskan kembali ke hierarki KPU 2019, termasuk menyatukan wilayah pemekaran baru di Papua ke provinsi induknya sesuai kondisi 2019.
 
-| Tingkat | Fitur GeoJSON | Node hierarki 2019 | Cakupan |
+Hasil rekonstruksi batas ini berfokus pada keselarasan historis data pemilu 2019, bukan sebagai peta batas resmi per 17 April 2019. Tingkat ketercakupan geometri untuk 34 provinsi dalam negeri adalah sebagai berikut:
+
+| Tingkat Wilayah | Fitur GeoJSON | Node Hierarki 2019 | Persentase Cakupan |
 | --- | ---: | ---: | ---: |
 | Provinsi | 34 | 34 | 100% |
-| Kabupaten/kota | 514 | 514 | 100% |
+| Kabupaten/Kota | 514 | 514 | 100% |
 | Kecamatan | 7.201 | 7.201 | 100% |
-| Desa/kelurahan | 81.046 | 83.398 | 97,18% |
+| Desa/Kelurahan | 81.046 | 83.398 | 97,18% |
 
-Sebanyak 1.034 desa fallback dijembatani kembali ke geometri Kemendagri berbasis 2017/2020 melalui kode unik. Hanya 185 fitur mempertahankan polygon BIG: 131 dari ekstrak Maret 2020 dan 54 dari Mei 2023. Dari seluruhnya, 178 memiliki UUPP paling lambat 2019 dan tujuh tidak mencantumkan tahun; tidak ada UUPP pasca-2019. Enam belas baris sumber Maret 2020 dengan UUPP pasca-2019 dibuang sebelum pencocokan. Sebanyak 2.352 desa/kelurahan tanpa poligon aman tetap tersedia melalui tabel, pencarian, panel, dan ekspor; grid menggantikan peta bila seluruh anak pada tingkat aktif tidak mempunyai geometri. Tidak ada fuzzy matching. Asal, fallback, crosswalk, metode kecocokan, CRS, bbox, perbaikan geometri, dan seluruh key tanpa geometri dicatat dalam `data/gis/audit2019.json`.
+Sebanyak 1.034 desa berhasil dipetakan kembali ke geometri Kemendagri 2017/2020 melalui pencocokan kode unik. Hanya 185 wilayah yang mempertahankan poligon BIG (131 dari data Maret 2020 dan 54 dari Mei 2023). Dari jumlah tersebut, 178 fitur memiliki tahun penetapan (UUPP) maksimal 2019 dan 7 tanpa tahun; tidak ada poligon dengan UUPP setelah 2019 yang digunakan (16 entri dengan UUPP pasca-2019 telah disaring sebelum pencocokan). Sebanyak 2.352 desa/kelurahan yang belum memiliki poligon tetap dapat diakses melalui tabel, pencarian, panel informasi, dan ekspor data; tampilan kisi (*grid*) akan aktif otomatis jika seluruh sub-wilayah tidak memiliki data spasial. Seluruh riwayat asal data, *fallback*, metode pencocokan, sistem koordinat (CRS), *bounding box*, perbaikan topologi, dan daftar wilayah tanpa geometri dicatat secara transparan pada `data/gis/audit2019.json`.
 
-Folder sumber `SHP GIS/` diabaikan Git karena ukurannya besar, sedangkan seluruh potongan GeoJSON runtime di `data/gis/` dilacak agar clone dan GitHub Pages langsung dapat menjalankan dashboard. Jika `provinsi.json` atau chunk wilayah gagal dimuat, aplikasi tetap menampilkan hasil melalui grid, panel, dan tabel.
+### Pemetaan 2024: Batas Desa Kemendagri Edisi Juli 2026
 
-## Menjalankan aplikasi
+Peta 2024 dibangun dari satu sumber *shapefile*: `SHP GIS/[LapakGIS.com]_BATAS_DESAKEL_AR_EDISI_JULI_2026_` — layer `BATAS_DESAKEL_AR` BIG edisi 21 Juli 2026 (84.503 fitur PolygonZ, EPSG:4326). Dataset ini merupakan satu-satunya sumber geospasial lokal yang telah memuat pemekaran 6 provinsi di Papua (kode 91–96) sekaligus menyediakan kode Kemendagri lengkap hingga tingkat desa.
 
-Jangan membuka halaman melalui `file://` karena browser umumnya memblokir `fetch()` JSON lokal. Sajikan root proyek melalui HTTP:
+Proses pemetaan dilakukan sepenuhnya berbasis kode tanpa mencocokkan nama: atribut `KDEPUM` (tanpa tanda titik) bersesuaian langsung dengan kode kelurahan/desa Pemilu 2024. Batas wilayah tingkat kecamatan, kabupaten, dan provinsi **digabungkan (*dissolve*) langsung dari awalan kode poligon desa pada *shapefile***, bukan sekadar menggabungkan desa yang memiliki hasil pemilu. Hal ini memastikan batas kabupaten dan provinsi tetap utuh dan rapat tanpa celah, meskipun terdapat desa yang datanya kosong.
+
+Urutan proses *dissolve* dilakukan secara cermat: batas desa digabungkan terlebih dahulu **sebelum** dilakukan penyederhanaan geometri (*simplification*). Jika penyederhanaan dilakukan di awal, titik koordinat pada perbatasan antar-desa akan bergeser dan menimbulkan celah (*sliver polygons*) saat digabungkan. Pada pengujian awal, kesalahan urutan tersebut menghasilkan 290.968 segmen batas dengan ukuran berkas `provinsi.json` mencapai 24,8 MB. Setelah urutannya diperbaiki, berkas yang sama menjadi **3,1 MB dengan 21.609 segmen batas** tanpa kehilangan detail garis pantai, dan total folder turun dari 188 MB menjadi 133 MB.
+
+| Tingkat Wilayah | Fitur GeoJSON | Node Hierarki 2024 | Persentase Cakupan |
+| --- | ---: | ---: | ---: |
+| Provinsi | 38 | 38 domestik (+ Luar Negeri) | 100% |
+| Kabupaten/Kota | 514 | 514 domestik (+ 129 PPLN) | 100% |
+| Kecamatan | 7.272 | 7.277 domestik (+ 129 PPLN) | 99,93% |
+| Desa/Kelurahan | 83.364 | 83.731 domestik (+ 129 PPLN) | 99,56% |
+
+Sebanyak 83.009 desa terhubung secara langsung melalui kecocokan kode wilayah. Sebanyak 355 desa lainnya dipetakan melalui *fallback* dengan syarat ketat: kesamaan nama kanonik **di dalam kabupaten yang sama**, hanya jika terdapat tepat satu kandidat yang cocok, dan poligon tersebut belum digunakan oleh desa lain. Sebanyak 367 desa (0,44%) belum memiliki data geometri—mayoritas berada di Provinsi Papua Barat Daya dan Papua Pegunungan akibat perbedaan penomoran desa antara data pemilu 2024 dan rilis Kemendagri 2026 (wilayah yang juga memiliki ketercakupan data Sirekap terendah). Daftar lengkap kode wilayah tanpa geometri tercatat di `data/gis2024/audit2024.json`.
+
+Wilayah Luar Negeri (kode 99) tidak memiliki batas administratif geospasial di peta Indonesia; 129 Panitia Pemilihan Luar Negeri (PPLN) tetap tercatat dalam struktur hierarki, tabel data, fitur pencarian, ekspor, dan divisualisasikan dalam bentuk kisi (*grid*). Selain itu, sebanyak 967 poligon pada *shapefile* yang berlabel "Area Tidak Terdefinisi" tanpa kode Kemendagri (mencakup total 116 km² dari 1.890.179 km²) dikeluarkan dari seluruh tingkatan karena bukan merupakan unit wilayah administratif resmi. Berkas kosong tetap ditulis untuk seluruh kabupaten dan kecamatan luar negeri agar *loader* tidak pernah menerima HTTP 404.
+
+Ukuran keluaran akhir: `provinsi.json` 3,1 MB, `kab/` 6,7 MB, `kec/` 24 MB, dan `desa/` 100 MB — total 133 MB untuk 91.188 fitur peta.
+
+Direktori sumber `SHP GIS/` diabaikan oleh Git karena ukurannya yang besar. Sebaliknya, seluruh berkas GeoJSON siap pakai pada `data/gis/` dan `data/gis2024/` tetap disertakan dalam repositori agar pengguna yang melakukan *clone* maupun pengunjung di GitHub Pages dapat langsung menjalankan dashboard tanpa perlu melakukan proses *build* ulang. Jika berkas peta wilayah tertentu gagal dimuat, aplikasi secara adaptif (*graceful fallback*) beralih menyajikan data melalui tampilan kisi, panel informasi, dan tabel rekapitulasi.
+
+## Panduan Menjalankan Aplikasi
+
+Hindari membuka berkas HTML langsung melalui protokol `file://` karena peramban modern memblokir permintaan `fetch()` ke berkas JSON lokal. Jalankan *web server* lokal dari direktori utama proyek:
 
 ```powershell
 cd "D:\PROJECT\Visualisasi Pemilu Indonesia 2024"
 python -m http.server 8000
 ```
 
-Kemudian buka [http://localhost:8000/](http://localhost:8000/). Gunakan `py -m http.server 8000` jika instalasi Windows menyediakan launcher `py` alih-alih perintah `python`.
+Setelah server aktif, buka [http://localhost:8000/](http://localhost:8000/) pada peramban web Anda. Gunakan perintah `py -m http.server 8000` jika sistem Windows Anda menggunakan *launcher* `py`.
 
-Data, GeoJSON, JavaScript aplikasi, dan stylesheet utama disajikan dari repository. D3 7.9.0 masih dimuat dari unpkg dan merupakan dependensi runtime, sehingga koneksi internet diperlukan kecuali D3 disediakan secara lokal. Font Archivo dimuat dari Google Fonts, tetapi stylesheet dapat memakai fallback font sistem bila layanan font tidak tersedia.
+Seluruh data, berkas GeoJSON, skrip JavaScript aplikasi, dan *stylesheet* disajikan secara lokal dari repositori. Pustaka D3 (v7.9.0) dimuat melalui CDN unpkg sehingga membutuhkan koneksi internet (kecuali jika pustaka D3 disediakan secara lokal). Tipografi Archivo dimuat melalui Google Fonts, dengan *fallback* otomatis ke *font* sistem apabila koneksi internet tidak tersedia.
 
-### Deployment GitHub Pages
+### Publikasi ke GitHub Pages
 
-Deployment produksi aktif di GitHub Pages dan disajikan langsung dari root
-branch `main`. Berkas `.nojekyll` dipertahankan agar GitHub Pages menerbitkan
-pohon statis apa adanya tanpa pemrosesan Jekyll.
+Aplikasi ini disajikan untuk produksi melalui GitHub Pages langsung dari direktori utama (*root*) pada *branch* `main`. Berkas `.nojekyll` disertakan agar GitHub Pages menyajikan seluruh berkas statis apa adanya tanpa pemrosesan Jekyll.
 
-Repository saat ini sudah melacak data runtime berikut karena semuanya dimuat
-melalui `fetch()` oleh browser:
+Repositori ini telah melacak seluruh berkas data yang dibutuhkan saat aplikasi berjalan (*runtime*):
 
-- `data/election2019/*.json`;
-- `data/gis/kab/*.json`;
-- `data/gis/kec/*.json`; dan
-- `data/gis/desa/*.json`.
+- `data/election2019/*.json` dan `data/election2024/*.json`;
+- `data/gis/{kab,kec,desa}/*.json`; serta
+- `data/gis2024/{kab,kec,desa}/*.json`.
 
-Artefak tersebut terdiri dari 35 chunk hasil, 34 chunk kabupaten/kota, 514
-chunk kecamatan, dan 7.201 chunk desa dengan ukuran total sekitar 97,8 MiB;
-setiap berkas jauh di bawah 100 MiB. Jangan menghapusnya dari Git atau
-memindahkannya ke Git LFS karena GitHub Pages harus menyajikan isi JSON secara
-langsung. Sebaliknya, jangan commit `.venv/`, `SHP GIS/`, `data/gis/_build/`, atau
-`data/gis_broken_*`; semuanya merupakan dependensi lokal, sumber mentah, atau
-staging yang tidak dibutuhkan browser.
+Untuk dataset 2019, berkas ini mencakup 35 *chunk* perolehan suara, 34 *chunk* kabupaten/kota, 514 *chunk* kecamatan, dan 7.201 *chunk* desa. Untuk dataset 2024 mencakup 39 *chunk* suara, 39 *chunk* kabupaten/kota, 643 *chunk* kecamatan, dan 7.406 *chunk* desa. Ukuran setiap berkas berada jauh di bawah batas 100 MB. Jangan menghapus berkas-berkas tersebut dari Git ataupun memindahkannya ke Git LFS agar GitHub Pages dapat menyajikan berkas JSON secara langsung. Sebaliknya, pastikan untuk tidak meng-commit direktori seperti `.venv/`, `SHP GIS/`, `data/gis/_build/`, `data/gis2024_stage/`, `data/_stage2024/`, atau `data/gis_broken_*` karena direktori tersebut hanya berupa dependensi lokal, berkas mentah, atau area penampungan sementara (*staging*).
 
-Setelah memastikan seluruh build dan tes lulus, siapkan commit dengan:
+Setelah memastikan seluruh proses pembangunan data dan pengujian berhasil, lakukan *commit* dan *push*:
 
 ```powershell
 git add -A
@@ -147,14 +214,11 @@ git commit -m "Update dashboard and runtime data"
 git push origin main
 ```
 
-Kemudian pilih **Settings → Pages → Deploy from a branch**, branch `main`,
-folder `/(root)`. Setelah deploy selesai, pastikan URL CSS `assets/modernist/styles.css`,
-`data/election2019/P1.json`, dan `data/gis/kab/P1.json` semuanya mengembalikan
-HTTP 200.
+Pada pengaturan repositori GitHub, buka **Settings → Pages → Build and deployment**, pilih sumber **Deploy from a branch**, arahkan ke *branch* `main` dan folder `/ (root)`. Setelah proses *deployment* selesai, pastikan aset seperti `assets/modernist/styles.css`, `data/election2019/P1.json`, `data/gis/kab/P1.json`, `data/election2024/11.json`, dan `data/gis2024/kab/11.json` dapat diakses dengan respons HTTP 200.
 
-## Membangun ulang data
+## Membangun Ulang Data (Data Pipeline)
 
-### Prasyarat Python
+### Prasyarat Lingkungan Python
 
 ```powershell
 py -m venv .venv
@@ -162,9 +226,9 @@ py -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-Dependensi build yang dipin adalah `pyogrio`, `pyshp`, dan `shapely`. Frontend tidak membutuhkan bundler atau instalasi paket npm. Node.js hanya diperlukan untuk pemeriksaan sintaks `app.js` dan regresi `geo_mapping.test.js`.
+Dependensi Python untuk pengolahan data telah dikunci pada versi tertentu di `requirements.txt` (`pyogrio`, `pyshp`, dan `shapely`). Sisi antarmuka (*frontend*) tidak memerlukan *bundler* maupun instalasi paket npm. Node.js hanya diperlukan jika Anda ingin menjalankan pemeriksaan sintaksis `app.js` dan uji regresi otomatis.
 
-### Hasil pemilu
+### Memproses Data Pemilu 2019
 
 ```powershell
 python build_2019_data.py `
@@ -174,68 +238,108 @@ python build_2019_data.py `
   --output data
 ```
 
-Skrip memuat pohon wilayah KPU, merekonsiliasinya dengan `dataprov-kec.csv` yang independen, membaca tiga folder kontes legacy plus ekspor Pilpres per provinsi serta CSV pendukung, memvalidasi header dan record, lalu menulis seluruh artefak schema 2 secara atomik. Path sumber default sama dengan contoh di atas; argumen eksplisit disarankan agar build mudah diaudit.
+Skrip ini memuat struktur hierarki wilayah KPU, merekonsiliasinya dengan berkas pembanding `dataprov-kec.csv`, membaca folder data pemilihan KPU lama serta ekspor Pilpres per provinsi, memvalidasi struktur data dan baris rekaman, kemudian menghasilkan seluruh berkas Schema v2 secara atomik (*transaksional*). Nilai *default* untuk lokasi data sumber telah disesuaikan dengan struktur di atas; penggunaan argumen eksplisit sangat disarankan untuk memudahkan audit proses *build*.
 
-### GIS
+### Memproses Data Pemilu 2024
 
-Tempatkan kumpulan sumber pada `SHP GIS/`, kemudian jalankan:
+```powershell
+python build_2024_data.py `
+  --source "D:\PROJECT\scrapping-pemilu-2024" `
+  --output data
+```
+
+Skrip membaca 643 berkas `data_pilpres/<prov>/<kab>.json`, mengambil nama provinsi dari `master_data/wilayah_provinsi.json` dan nama kabupaten/kecamatan dari berkas DBF *shapefile*, menerapkan aturan validasi per TPS, lalu menyusun berkas `wilayah2024.json`, `election2024.json`, *chunk* desa per provinsi, serta `audit2024.json`. Sebelum berkas dipasang ke direktori utama, sistem melakukan verifikasi integritas: agregasi suara tingkat kecamatan harus cocok persis dengan total penjumlahan *chunk* desa, dan daftar desa pada hierarki harus identik dengan daftar desa pada hasil pemilu.
+
+### Memproses Data GIS 2019
+
+Tempatkan berkas-berkas *shapefile* sumber pada folder `SHP GIS/`, kemudian jalankan:
 
 ```powershell
 python build_gis_data.py
 ```
 
-Pipeline GIS membangun potongan berdasarkan key hierarki 2019 melalui area staging sebelum mengganti output akhir. Jangan memakai kembali `tools/legacy/build_kec_index.py` atau `data/gis/kec_index.json` sebagai bagian loader baru; keduanya merupakan jalur lama berbasis nama/kode yang tidak menjamin pemetaan eksak.
+Alur kerja GIS menyusun potongan GeoJSON berdasarkan kode hierarki 2019 melalui direktori sementara (*staging*) sebelum memperbarui direktori produksi. Skrip lama seperti `tools/legacy/build_kec_index.py` dan berkas `data/gis/kec_index.json` sudah ditinggalkan karena menggunakan metode berbasis nama/kode lama yang tidak menjamin kecocokan eksak.
 
-## Validasi
+### Memproses Data GIS 2024
 
-Jalankan enam pemeriksaan berikut setelah build:
+Jalankan skrip ini setelah `build_2024_data.py` selesai, karena pemroses GIS membutuhkan `data/wilayah2024.json` sebagai acuan kode wilayah yang valid:
+
+```powershell
+python build_gis_2024.py
+```
+
+Proses *build* terakhir membutuhkan waktu **5.321 detik (89 menit)** pada prosesor *single-thread* karena membaca *shapefile* sebesar 2,1 GB per kabupaten dan menggabungkan (*dissolve*) 83.529 poligon desa ke tingkat di atasnya. Provinsi kepulauan seperti Nusa Tenggara Barat dan Sulawesi Tengah menghabiskan porsi waktu terbesar. Hasil *build* divalidasi secara ketat sebelum dipasang: setiap kecamatan wajib memiliki berkas desa, setiap kabupaten wajib memiliki berkas kecamatan, dan setiap kode fitur peta wajib terdaftar pada struktur hierarki.
+
+## Pengujian dan Validasi Data
+
+Jalankan rangkaian pemeriksaan berikut untuk memastikan integritas data dan antarmuka:
 
 ```powershell
 node --check app.js
 node tests/geo_mapping.test.js
+node tests/year_switch.test.js
 python tests/test_data_integrity.py
 python tests/test_gis_integrity.py
+python tests/test_2024_artifacts.py
 python tests/test_gis_install_transaction.py
 python tests/test_http_smoke.py
 ```
 
-Pemeriksaan hasil memuat seluruh 35 chunk provinsi, memastikan rollup desa sama persis dengan agregat kecamatan, memverifikasi 1.954 berkas scrape legacy dan 35 CSV Pilpres beserta hash bila foldernya tersedia, menghitung ulang digest 8.011 berkas node hierarki langsung dari disk, memastikan tidak ada satu pun baris yang gagal dipetakan ke ID wilayah KPU, dan menguji kontes yang benar-benar hilang. Pemeriksaan GIS memuat 7.750 GeoJSON, memverifikasi seluruh key/parent, hash pohon keluaran, validitas 88.795 geometri, komposisi vintage polygon BIG, dan kesamaan daftar key tanpa geometri. Regresi transaksi menyimulasikan pemasangan sukses serta kegagalan satu berkas dan memastikan rollback utuh. Smoke test menyajikan aplikasi lewat HTTP lokal dan membuka entry HTML, stylesheet, metadata serta chunk hasil, dan GeoJSON. Regresi Node memeriksa schema, urutan partai, rollup, resolver key GIS, data kosong, hasil seri, dan ketiadaan jalur sintetis/atlas lama.
+Pengujian data 2019 memuat seluruh 35 *chunk* provinsi, memverifikasi bahwa penjumlahan data desa identik dengan agregat kecamatan, mencocokkan *hash* 1.954 berkas *scrape* KPU lama dan 35 CSV Pilpres, menghitung ulang *checksum* 8.011 berkas struktur hierarki dari penyimpanan lokal, memastikan seluruh baris data terpetakan ke ID resmi KPU, serta memvalidasi ketiadaan kontes tertentu. Sementara itu, pengujian GIS 2019 memeriksa 7.750 berkas GeoJSON, memverifikasi relasi kode wilayah dan induknya, keabsahan 88.795 geometri poligon, tahun rilis poligon BIG, serta konsistensi daftar wilayah tanpa data geometri.
 
-## Struktur proyek
+Skrip `tests/test_2024_artifacts.py` menghitung ulang seluruh perolehan suara 2024 dari *chunk* desa dan membandingkannya dengan agregat kecamatan serta laporan audit, memverifikasi bahwa format kode desa sesuai standar Kemendagri, lalu memvalidasi seluruh berkas GeoJSON 2024 (kesesuaian berkas dengan hierarki, relasi kode induk, keabsahan geometri, *bounding box*, dan daftar wilayah tanpa peta). Opsi `--skip-gis` dapat digunakan jika Anda hanya ingin menguji data perolehan suara.
 
-| Path | Peran |
+Uji transaksi memverifikasi mekanisme *commit* dan *rollback* direktori saat proses instalasi berhasil maupun gagal di tengah jalan. *Smoke test* menjalankan server HTTP lokal untuk menguji aksesibilitas halaman HTML, *stylesheet*, metadata, *chunk* suara, serta GeoJSON untuk **kedua tahun pemilu**. Uji regresi Node.js memeriksa fungsionalitas pemuat data frontend untuk 2019 dan 2024, termasuk kepatuhan skema, urutan opsi pemilihan, agregasi suara, pencocokan kode GIS, penanganan data kosong, kondisi seri, konsistensi warna kandidat, serta memastikan tidak ada sisa pustaka atlas lama.
+
+## Struktur Repositori
+
+| Berkas / Direktori | Peran dan Deskripsi |
 | --- | --- |
-| `.editorconfig` | Aturan encoding, newline, dan indentasi lintas editor |
-| `.gitattributes` | Penandaan JSON runtime sebagai artefak generated di GitHub |
-| `.gitignore` | Memisahkan sumber/staging lokal dari data runtime yang dilacak |
-| `.nojekyll` | Meminta GitHub Pages menyajikan pohon statis tanpa Jekyll |
-| `index.html` | Entry point utama |
-| `pemilu-2024.html` | Alias entry lama dengan isi Pemilu 2019 yang identik |
-| `app.js` | State, lazy loader, agregasi tampilan, peta D3, interaksi, dan ekspor |
-| `.thumbnail` | Pratinjau visual dashboard untuk metadata proyek |
-| `AUDIT_2019.md` | Ringkasan audit manusia untuk hasil pemilu dan batas wilayah |
-| `assets/modernist/` | Stylesheet dan dokumentasi design system yang dipakai kedua entry HTML |
-| `build_2019_data.py` | Builder dan audit lengkap CSV hasil Pemilu 2019 |
-| `build_gis_data.py` | Pemilihan sumber, penyelarasan key, konversi, dan audit GIS |
-| `requirements.txt` | Dependensi Python build yang dipin |
-| `tools/inspect_shp.py` | Utilitas CLI untuk melihat schema dan contoh record shapefile |
-| `tools/legacy/` | Utilitas loader lama yang tidak menjadi bagian build aktif |
-| `src/` | Sampel CSV lama beserta penjelasan; bukan sumber audit lengkap |
-| `tests/geo_mapping.test.js` | Regresi kontrak frontend/data/GIS |
-| `tests/test_data_integrity.py` | Verifikasi seluruh artefak hasil dan audit CSV |
-| `tests/test_gis_integrity.py` | Verifikasi seluruh chunk, key, parent, geometri, dan audit GIS |
-| `tests/test_gis_install_transaction.py` | Simulasi commit dan rollback installer GIS |
-| `tests/test_http_smoke.py` | Smoke test penyajian aplikasi dan data melalui HTTP lokal |
-| `SHP GIS/` | Koleksi sumber geospasial lokal; diabaikan Git |
-| `data/` | Artefak hierarki, hasil, audit, GeoJSON, dan dokumentasi data runtime |
+| `.editorconfig` | Konfigurasi format teks, pemisah baris, dan indentasi editor |
+| `.gitattributes` | Menandai berkas JSON *runtime* sebagai artefak *generated* di GitHub |
+| `.gitignore` | Mengabaikan berkas sumber mentah dan direktori *staging* dari pelacakan Git |
+| `.nojekyll` | Memastikan GitHub Pages menyajikan berkas statis tanpa pemrosesan Jekyll |
+| `index.html` | Berkas utama antarmuka web dashboard |
+| `pemilu-2024.html` | Tautan alternatif lama (konten identik dengan `index.html`) |
+| `app.js` | Logika utama dashboard: manajemen *state*, pemuatan data (*lazy loader*), agregasi statistik, visualisasi peta D3, interaktivitas, dan ekspor data |
+| `.thumbnail` | Gambar pratinjau visual dashboard untuk metadata proyek |
+| `AUDIT_2019.md` | Dokumentasi audit teknis hasil pemilu dan batas wilayah 2019 |
+| `AUDIT_2024.md` | Dokumentasi audit teknis hasil pemilu dan batas wilayah 2024 |
+| `assets/modernist/` | Berkas *stylesheet* dan dokumentasi sistem desain |
+| `build_2019_data.py` | Skrip penyusunan data dan audit hasil Pemilu 2019 dari berkas CSV |
+| `build_gis_data.py` | Skrip pengolahan, penyelarasan kode wilayah, dan audit data spasial GIS 2019 |
+| `build_2024_data.py` | Skrip penyusunan data dan audit hasil Pilpres 2024 dari data Sirekap |
+| `build_gis_2024.py` | Skrip agregasi (*dissolve*) batas desa Kemendagri 2026 dan audit GIS 2024 |
+| `requirements.txt` | Daftar dependensi pustaka Python untuk *data pipeline* |
+| `tools/inspect_shp.py` | Utilitas CLI untuk memeriksa skema dan sampel data *shapefile* |
+| `tools/legacy/` | Utilitas pemrosesan lama (tidak digunakan dalam alur *build* aktif) |
+| `src/` | Sampel data CSV lama (hanya sebagai referensi historis) |
+| `tests/geo_mapping.test.js` | Pengujian integrasi antarmuka, struktur data, dan pemetaan GIS kedua tahun |
+| `tests/year_switch.test.js` | Pengujian fitur pergantian tahun: inisialisasi, *drill-down*, penyimpanan *cache*, dan *fallback* kisi |
+| `tests/test_data_integrity.py` | Verifikasi integritas seluruh artefak data dan audit perolehan suara |
+| `tests/test_gis_integrity.py` | Verifikasi berkas GeoJSON, kode wilayah, hierarki, geometri, dan audit GIS 2019 |
+| `tests/test_2024_artifacts.py` | Verifikasi data hasil pemilu, laporan audit, dan GeoJSON 2024 berdasarkan perhitungan ulang |
+| `tests/test_gis_install_transaction.py` | Pengujian mekanisme transaksi *commit* dan *rollback* pada instalasi GIS |
+| `tests/test_http_smoke.py` | Pengujian aksesibilitas aplikasi dan berkas data melalui server HTTP lokal |
+| `SHP GIS/` | Direktori penyimpanan data spasial mentah lokal (diabaikan oleh Git) |
+| `data/` | Direktori artefak data hasil pemilu, hierarki wilayah, GeoJSON, dan laporan audit |
 
-## Keterbatasan
+## Keterbatasan dan Catatan Data
 
-- Cakupan kontes mengikuti CSV yang tersedia, bukan asumsi cakupan nasional. Pilpres mempunyai rekaman di 7.246 dari 7.331 kecamatan dan DPR RI hanya di 1.211 kecamatan.
-- Kekosongan Pilpres tidak tersebar merata: 85 kecamatan tanpa data hampir seluruhnya di Papua, tempat SITUNG tidak pernah merampungkan distrik sistem noken, sehingga total Papua hanya 71% (01) dan 61% (02) dari angka resmi. Kabupaten ASMAT tidak ada sama sekali.
-- Partisipasi Pilpres hanya terhitung di TPS yang punya pemasok DPT, yaitu 497.941 dari 806.583 TPS, dan tidak boleh dibaca sebagai angka nasional.
-- DPRD Kabupaten/Kota tidak mempunyai empat TPS Harare, Zimbabwe, yang terdapat pada batch terakhir DPRD Provinsi; wilayah tersebut tetap ada dan kontes yang hilang disimpan sebagai `null`.
-- Tidak ada CSV DPD, sehingga DPD tidak divisualisasikan.
-- CSV adalah hasil scraping KPU dan mengandung nilai serta metadata anomali. `data/audit2019.json` harus dibaca bersama visualisasi; artefak ini bukan pengganti dokumen penetapan resmi KPU.
-- Batas administratif merupakan rekonstruksi multi-sumber yang diselaraskan ke hierarki 2019, bukan satu snapshot resmi tepat pada tanggal pemilu.
-- D3 dan font Archivo masih berasal dari CDN; seluruh aset runtime selain keduanya tersedia pada clone repository.
+- **Ketercakupan Berdasarkan Data Mentah:** Kelengkapan data dibatasi oleh ketersediaan berkas CSV sumber, bukan asumsi data nasional lengkap. Sebagai contoh, Pilpres 2019 memiliki data di 7.246 dari 7.331 kecamatan, sedangkan pemilihan DPR RI hanya tercatat di 1.211 kecamatan.
+- **Distribusi Data Pilpres 2019 Tidak Merata:** Ketiadaan data Pilpres 2019 terpusat di wilayah tertentu; 85 kecamatan tanpa data hampir seluruhnya berada di Papua karena sistem SITUNG KPU tidak merampungkan rekapitulasi untuk distrik yang menerapkan sistem noken. Akibatnya, total suara yang terekam di Papua hanya 71% (paslon 01) dan 61% (paslon 02) dari hasil resmi, serta data Kabupaten Asmat tidak tersedia sama sekali.
+- **Batasan Statistik Partisipasi 2019:** Tingkat partisipasi Pilpres 2019 hanya dapat dihitung pada TPS yang memiliki data DPT (497.941 dari 806.583 TPS). Oleh karena itu, angka partisipasi tidak dapat diartikan sebagai angka agregat nasional.
+- **Pengecualian Wilayah Luar Negeri Khusus:** Data DPRD Kabupaten/Kota tidak menyertakan 4 TPS di Harare, Zimbabwe (yang sempat tercatat pada data DPRD Provinsi); entri wilayah tersebut tetap ditampilkan dengan nilai kontes `null`.
+- **Ketiadaan Data Pemilihan DPD:** Data pemilihan DPD tidak divisualisasikan karena tidak tersedianya berkas sumber untuk DPD.
+- **Sifat Data Scraping:** Seluruh data berasal dari hasil *scraping* portal KPU dan mengandung anomali bawaan dari sumber aslinya. Pengguna disarankan membaca `data/audit2019.json` sebagai pendamping visualisasi; repositori ini ditujukan untuk analisis data dan bukan merupakan dokumen pengganti keputusan penetapan resmi KPU.
+- **Batas Geospasial 2019 Bersifat Rekonstruksi:** Batas wilayah administratif 2019 merupakan hasil rekonstruksi multi-sumber yang diselaraskan secara historis dengan hierarki KPU 2019, bukan rekaman batas resmi tunggal pada hari pemungutan suara.
+
+Catatan Khusus Pemilu 2024:
+
+- **Perolehan Suara 2024 Bukan Rekapitulasi Resmi Nasional:** Sistem Sirekap KPU hanya memublikasikan angka tabulasi pada 645.836 dari 823.378 TPS (78,4%). Dengan demikian, total 128.087.760 suara paslon pada dashboard ini murni akumulasi dari TPS yang memuat angka. Untuk data penetapan resmi pemenang pemilu, silakan merujuk langsung pada Surat Keputusan penetapan KPU RI.
+- **Kekosongan Data Terpusat Secara Geografis:** Tingkat ketiadaan data 2024 sangat terpusat: dari 94,8% di Bengkulu hingga hanya 0,1% di Papua Pegunungan. Peta perolehan suara di enam provinsi wilayah Papua tidak dapat dijadikan kesimpulan hasil pemilu di daerah tersebut.
+- **Cakupan Validasi Partisipasi 2024:** Statistik partisipasi pemilih 2024 hanya dihitung dari 494.311 TPS (60,0%) yang memenuhi kriteria validasi metadata; data TPS yang memiliki anomali tidak disertakan dalam kalkulasi agregat partisipasi.
+- **Ketersediaan Kontes Pemilihan 2024:** Hasil pemilihan legislatif (DPR dan DPRD) 2024 saat ini belum tersedia; visualisasi baru mencakup pemilihan Presiden dan Wakil Presiden.
+- **Rujukan Batas Wilayah 2024:** Batas wilayah 2024 mengacu pada data spasial Kemendagri edisi Juli 2026 (bukan batas persis pada 14 Februari 2024). Sebanyak 367 desa/kelurahan (0,44%) tidak memiliki poligon peta karena perubahan kode wilayah pasca-pemekaran, yang sebagian besar berada di Papua Barat Daya dan Papua Pegunungan.
+- **Visualisasi Panitia Pemilihan Luar Negeri (PPLN):** Sebanyak 129 PPLN (Luar Negeri) tidak memiliki geometri peta wilayah dan disajikan melalui representasi kisi (*grid*), tabel, fitur pencarian, dan ekspor data.
+- **Ketergantungan Aset Eksternal:** Pustaka D3 dan tipografi Archivo saat ini dimuat secara daring via CDN; adapun seluruh berkas dan data aplikasi lainnya telah tersedia lengkap di dalam repositori.

@@ -1,20 +1,32 @@
-# Runtime JSON under data/election2019 and data/gis/{kab,kec,desa} is
-# intentionally tracked for GitHub Pages.
+# Runtime JSON under data/election2019, data/election2024, data/gis/{kab,kec,desa},
+# and data/gis2024/{kab,kec,desa} is intentionally tracked for GitHub Pages.
 
 # Local environments and caches
 .venv/
 __pycache__/
 *.py[cod]
 
-# Large local source material
+# Large local source material (multi-gigabyte GIS files)
 /SHP GIS/
 
 # Build staging and retired GIS outputs
 /data/gis/_build/
 /data/gis/prov/
+/data/gis2024/_build/
+/data/gis2024_stage*/
+/data/gis_stage*/
+/data/_stage*/
+/data/_stage2024/
 /data/gis_broken_*/
 
-# Editor and operating-system noise
+# Editor and local IDE/AI configuration
+.claude/
+.vscode/
+.idea/
+
+# Operating system and temporary files
 .DS_Store
 Thumbs.db
 Desktop.ini
+*.tmp
+*.log

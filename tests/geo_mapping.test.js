@@ -5,19 +5,106 @@ const fs = require('fs');
 const path = require('path');
 const app = require('../app.js');
 
-const wilayah = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'wilayah.json'), 'utf8'));
-const election = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'election2019.json'), 'utf8'));
+const root = path.join(__dirname, '..');
+const read = relative => JSON.parse(fs.readFileSync(path.join(root, relative), 'utf8'));
+const dataset = id => {
+  const found = app.DATASETS.find(item => item.id === id);
+  assert.ok(found, `dataset ${id} harus terdaftar`);
+  return found;
+};
 
-assert.strictEqual(wilayah.schema, 2, 'wilayah.json harus memakai schema 2');
-assert.strictEqual(election.schema, 2, 'election2019.json harus memakai schema 2');
-assert.deepStrictEqual(wilayah.contests, app.CONTEST_ORDER, 'wilayah memuat tepat empat kontes nyata');
-assert.deepStrictEqual(election.contests.map(contest => contest.id), app.CONTEST_ORDER,
-  'hasil memuat tepat empat kontes nyata dan tanpa DPD');
-assert.deepStrictEqual(election.stats, [
+const STATS = [
   'total-pemilih', 'total-pengguna', 'suara-total', 'suara-sah',
   'suara-tidak-sah', 'tps', 'validated-tps', 'blank-tps', 'outlier-vote-tps'
-]);
+];
 
+/* Kedua tahun memakai kontrak schema 2 yang sama; yang berbeda hanya awalan
+   kunci, daftar kontes, dan jumlah opsi. Pemeriksaan di bawah menjalankan
+   pemuat yang sama dua kali sehingga tidak ada jalur yang hanya teruji di satu
+   tahun. */
+function checkDataset(id, expectedContests, expectedPrefix) {
+  const D = dataset(id);
+  const wilayah = read(D.hierarchy);
+  const election = read(D.election);
+
+  assert.strictEqual(wilayah.schema, 2, `${id}: wilayah harus schema 2`);
+  assert.strictEqual(election.schema, 2, `${id}: hasil harus schema 2`);
+  assert.deepStrictEqual(wilayah.contests, expectedContests, `${id}: daftar kontes hierarki`);
+  assert.deepStrictEqual(election.contests.map(contest => contest.id), expectedContests,
+    `${id}: daftar kontes hasil`);
+  assert.deepStrictEqual(election.stats, STATS, `${id}: nama statistik harus sama lintas tahun`);
+  assert.strictEqual(
+    typeof wilayah.key_prefix === 'string' ? wilayah.key_prefix : 'P',
+    expectedPrefix, `${id}: awalan kunci`);
+
+  app.S.root = app.buildTree(wilayah);
+  app.installElectionData(election, D);
+  const contests = app.normalizeContests(election.contests, D);
+  assert.deepStrictEqual(contests.map(contest => contest.id), expectedContests);
+
+  const firstProvince = app.S.root.anak[0];
+  const firstKab = firstProvince.anak[0];
+  const firstKec = firstKab.anak[0];
+  assert.strictEqual(firstProvince.key, `${expectedPrefix}${wilayah.prov[0].k}`);
+  assert.strictEqual(firstKab.key, `${firstProvince.key}.${wilayah.prov[0].kab[0].k}`);
+  assert.strictEqual(firstKec.key, `${firstKab.key}.${wilayah.prov[0].kab[0].kec[0].k}`);
+  if (firstKec.anak.length) {
+    assert.strictEqual(firstKec.anak[0].key,
+      `${firstKec.key}.${wilayah.prov[0].kab[0].kec[0].kel[0].k}`);
+  }
+
+  const kecNodes = [...app.S.nodes.values()].filter(node => node.lv === 3);
+  assert.strictEqual(kecNodes.length, Object.keys(election.kec).length,
+    `${id}: setiap kecamatan hierarki harus memiliki slot pada indeks hasil`);
+
+  // Rollup nasional harus merupakan penjumlahan entri kecamatan eksak, bukan
+  // generator, imputasi, atau pembagian proporsional.
+  for (const contest of contests) {
+    const rootResult = app.resultOf(app.S.root, contest.id);
+    const expectedVotes = new Array(contest.opsi.length).fill(0);
+    const expectedStats = new Array(election.stats.length).fill(0);
+    let covered = 0;
+    for (const node of kecNodes) {
+      const row = election.kec[node.key];
+      const entry = row && row[contest.sourceIndex];
+      if (!entry) continue;
+      covered++;
+      contest.sourceIndexes.forEach((sourceIndex, outputIndex) => {
+        expectedVotes[outputIndex] += Number(entry[0][sourceIndex] || 0);
+      });
+      expectedStats.forEach((_, index) => { expectedStats[index] += Number(entry[1][index] || 0); });
+    }
+    assert.deepStrictEqual(rootResult.votes, expectedVotes, `${id}/${contest.id}: rollup suara nasional salah`);
+    assert.deepStrictEqual(rootResult.stats, expectedStats, `${id}/${contest.id}: rollup statistik nasional salah`);
+    assert.strictEqual(rootResult.covered, covered, `${id}/${contest.id}: cakupan kecamatan salah`);
+    assert.strictEqual(rootResult.total, kecNodes.length, `${id}/${contest.id}: denominator cakupan salah`);
+  }
+
+  // Data nol/hilang tidak boleh menghasilkan pemenang semu.
+  const optionCount = contests[0].opsi.length;
+  const missing = { lv: 4, key: 'TEST.MISSING', name: 'TANPA DATA', anak: [], parent: firstKec };
+  assert.strictEqual(app.winnerOf(missing), null, `${id}: wilayah tanpa data tidak boleh punya pemenang`);
+  const contestMap = app.S.results.get(app.S.pemilu);
+  const tied = { lv: 4, key: 'TEST.TIED', name: 'SERI', anak: [], parent: firstKec };
+  contestMap.set(tied.key, {
+    votes: new Array(optionCount).fill(17), stats: new Array(election.stats.length).fill(0),
+    present: true, covered: 1, total: 1
+  });
+  assert.deepStrictEqual(app.leadersOf(tied), [...Array(optionCount).keys()]);
+  assert.strictEqual(app.winnerOf(tied), null, `${id}: seri tidak boleh diberikan kepada opsi pertama`);
+  assert.strictEqual(app.isTie(tied), true);
+  contestMap.delete(tied.key);
+
+  const featureA = { properties: { key: firstKec.key } };
+  const featureB = { properties: { key: firstKec.key } };
+  assert.strictEqual(app.featureNode(featureA), firstKec, `${id}: fitur harus ditautkan lewat properties.key`);
+  assert.strictEqual(app.featureNode(featureB), firstKec, `${id}: multipart boleh berbagi key yang sama`);
+  assert.strictEqual(app.featureNode({ properties: { name: firstKec.name } }), null,
+    `${id}: nama mirip tidak boleh dipakai sebagai resolver GIS`);
+  return { wilayah, election, contests };
+}
+
+/* ── nomor dan kolom surat suara ─────────────────────────────────── */
 const officialPartyNumbers = app.PARTY_SPEC.map(party => party.no);
 assert.deepStrictEqual(officialPartyNumbers, [
   '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14',
@@ -28,81 +115,59 @@ assert.deepStrictEqual(app.PARTY_SPEC.map(party => party.column), [
   'perindo', 'ppp', 'psi', 'pan', 'hanura', 'demokrat', 'pa', 'sira', 'pda', 'pna',
   'pbb', 'pkpi'
 ]);
+assert.deepStrictEqual(app.PARTY_SPEC_2024.map(party => party.no),
+  Array.from({ length: 24 }, (_, index) => String(index + 1)),
+  'surat suara 2024 memuat 24 partai bernomor urut 1–24');
+assert.deepStrictEqual(app.PARTY_SPEC_2024.map(party => party.column),
+  Array.from({ length: 24 }, (_, index) => `partai-${index + 1}`),
+  'kolom legislatif 2024 memakai kontrak partai-<nomor urut>');
+assert.deepStrictEqual(app.PASLON_2024.map(option => option.column),
+  ['paslon-1', 'paslon-2', 'paslon-3']);
+// Warna paslon dipertahankan lintas tahun supaya toggle tahun tidak menukar
+// arti warna: biru tetap tiket Prabowo, merah tetap tiket usungan PDI-P.
+assert.strictEqual(app.PASLON_2019[1].warna, app.PASLON_2024[1].warna,
+  'tiket Prabowo harus memakai warna yang sama pada 2019 dan 2024');
+assert.strictEqual(app.PASLON_2019[0].warna, app.PASLON_2024[2].warna,
+  'tiket usungan PDI-P harus memakai warna yang sama pada 2019 dan 2024');
+assert.strictEqual(new Set(app.PASLON_2024.map(option => option.warna)).size, 3,
+  'tiga paslon 2024 harus berbeda warna');
 
-app.S.root = app.buildTree(wilayah);
-app.installElectionData(election);
-const contests = app.normalizeContests(election.contests);
-assert.deepStrictEqual(contests.map(contest => contest.id), app.CONTEST_ORDER);
-for (const contest of contests.filter(contest => contest.id !== 'pilpres')) {
+/* ── dua dataset ─────────────────────────────────────────────────── */
+const y2019 = checkDataset('2019', app.CONTEST_ORDER, 'P');
+const y2024 = checkDataset('2024', ['pilpres'], '');
+
+assert.strictEqual(y2024.contests[0].opsi.length, 3, '2024: Pilpres memiliki tiga paslon');
+assert.strictEqual(y2019.contests[0].opsi.length, 2, '2019: Pilpres memiliki dua paslon');
+for (const contest of y2019.contests.filter(contest => contest.id !== 'pilpres')) {
   assert.deepStrictEqual(contest.opsi.map(option => option.no), officialPartyNumbers,
     `${contest.id}: urutan partai UI harus mengikuti nomor surat suara`);
 }
+// Kunci 2024 adalah kode Kemendagri apa adanya, karena itulah yang membuat
+// penggabungan dengan shapefile desa berjalan tanpa pencocokan nama.
+const sampleVillage = [...app.S.nodes.values()].find(node => node.lv === 4 && node.key.startsWith('11.'));
+assert.ok(/^\d{2}\.\d{2}\.\d{2}\.\d{4}$/.test(sampleVillage.key),
+  `2024: kunci desa harus berbentuk kode Kemendagri, ditemukan ${sampleVillage.key}`);
 
-const firstProvince = app.S.root.anak[0];
-const firstKab = firstProvince.anak[0];
-const firstKec = firstKab.anak[0];
-assert.strictEqual(firstProvince.key, `P${wilayah.prov[0].k}`);
-assert.strictEqual(firstKab.key, `${firstProvince.key}.${wilayah.prov[0].kab[0].k}`);
-assert.strictEqual(firstKec.key, `${firstKab.key}.${wilayah.prov[0].kab[0].kec[0].k}`);
-if (firstKec.anak.length) {
-  assert.strictEqual(firstKec.anak[0].key,
-    `${firstKec.key}.${wilayah.prov[0].kab[0].kec[0].kel[0].k}`);
-}
-
-const kecNodes = [...app.S.nodes.values()].filter(node => node.lv === 3);
-assert.strictEqual(kecNodes.length, Object.keys(election.kec).length,
-  'setiap kecamatan hierarki harus memiliki slot pada indeks hasil');
-
-// Rollup nasional harus merupakan penjumlahan entri kecamatan eksak, bukan
-// generator, imputasi, atau pembagian proporsional.
-for (const contest of contests) {
-  const rootResult = app.resultOf(app.S.root, contest.id);
-  const expectedVotes = new Array(contest.opsi.length).fill(0);
-  const expectedStats = new Array(election.stats.length).fill(0);
-  let covered = 0;
-  for (const node of kecNodes) {
-    const row = election.kec[node.key];
-    const entry = row && row[contest.sourceIndex];
-    if (!entry) continue;
-    covered++;
-    contest.sourceIndexes.forEach((sourceIndex, outputIndex) => {
-      expectedVotes[outputIndex] += Number(entry[0][sourceIndex] || 0);
-    });
-    expectedStats.forEach((_, index) => { expectedStats[index] += Number(entry[1][index] || 0); });
-  }
-  assert.deepStrictEqual(rootResult.votes, expectedVotes, `${contest.id}: rollup suara nasional salah`);
-  assert.deepStrictEqual(rootResult.stats, expectedStats, `${contest.id}: rollup statistik nasional salah`);
-  assert.strictEqual(rootResult.covered, covered, `${contest.id}: cakupan kecamatan salah`);
-  assert.strictEqual(rootResult.total, kecNodes.length, `${contest.id}: denominator cakupan salah`);
-}
-
-// Data nol/hilang tidak boleh menghasilkan pemenang semu.
-const missing = { lv: 4, key: 'TEST.MISSING', name: 'TANPA DATA', anak: [], parent: firstKec };
-assert.strictEqual(app.winnerOf(missing), null);
-const contestMap = app.S.results.get(app.S.pemilu);
-const tied = { lv: 4, key: 'TEST.TIED', name: 'SERI', anak: [], parent: firstKec };
-contestMap.set(tied.key, {
-  votes: [17, 17], stats: new Array(election.stats.length).fill(0),
-  present: true, covered: 1, total: 1
-});
-assert.deepStrictEqual(app.leadersOf(tied), [0, 1]);
-assert.strictEqual(app.winnerOf(tied), null, 'seri tidak boleh diberikan kepada opsi pertama');
-assert.strictEqual(app.isTie(tied), true);
-const featureA = { properties: { key: firstKec.key } };
-const featureB = { properties: { key: firstKec.key } };
-assert.strictEqual(app.featureNode(featureA), firstKec, 'fitur harus ditautkan lewat properties.key');
-assert.strictEqual(app.featureNode(featureB), firstKec, 'multipart boleh berbagi key yang sama');
-assert.strictEqual(app.featureNode({ properties: { name: firstKec.name } }), null,
-  'nama mirip tidak boleh dipakai sebagai resolver GIS');
-
-const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+/* ── jalur berkas dan sisa implementasi lama ─────────────────────── */
+const source = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
 for (const forbidden of ['mulberry32', 'sharesFor', 'sintetis', 'indonesia-atlas', 'topojson.feature', 'kec_index.json']) {
   assert(!source.includes(forbidden), `jalur lama masih ditemukan: ${forbidden}`);
 }
-assert(source.includes('data/gis/provinsi.json'));
-assert(source.includes('data/election2019/${encodeURIComponent(P.key)}.json'));
-assert(source.includes('pemilu2019-${S.pemilu}-'));
+assert(source.includes('${gisDir}/${folder}/${encodeURIComponent(key)}.json'),
+  'chunk GeoJSON harus dibaca dari folder dataset aktif');
+assert(source.includes('${dataset.leafDir}/${encodeURIComponent(P.key)}.json'),
+  'chunk hasil desa harus dibaca dari folder dataset aktif');
+assert(source.includes('pemilu${S.D.id}-${S.pemilu}-'),
+  'nama berkas CSV harus mengikuti tahun aktif');
 assert(!source.includes('.slice(0, O.length > 8 ? 8 : O.length)'),
-  'tabel harus menampilkan seluruh 20 partai, bukan hanya delapan pertama');
+  'tabel harus menampilkan seluruh partai, bukan hanya delapan pertama');
+for (const D of app.DATASETS) {
+  for (const file of [D.hierarchy, D.election]) {
+    assert.ok(fs.existsSync(path.join(root, file)), `artefak ${file} harus ada di repo`);
+  }
+  assert.ok(fs.existsSync(path.join(root, D.gisDir, 'provinsi.json')),
+    `${D.id}: ${D.gisDir}/provinsi.json harus ada`);
+  assert.ok(fs.existsSync(path.join(root, D.leafDir)), `${D.id}: folder chunk hasil harus ada`);
+}
 
-console.log('geo_mapping.test.js: skema, rollup eksak, urutan partai, dan pemetaan key lulus');
+console.log('geo_mapping.test.js: skema dua tahun, rollup eksak, urutan surat suara, dan pemetaan key lulus');
