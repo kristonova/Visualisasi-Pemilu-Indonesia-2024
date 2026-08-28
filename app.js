@@ -81,9 +81,14 @@ const PARTY_SPEC = [
 }));
 
 /* Surat suara 2024: 1–17 partai nasional, 18–23 partai lokal Aceh, lalu Ummat
-   di nomor 24. Kolom `partai-<nomor urut>` adalah kontrak yang harus dipakai
-   builder legislatif 2024 nanti, sama seperti `paslon-<nomor urut>` pada
-   Pilpres 2024; kolom yang tidak dikenali tetap tampil lewat unknownOption(). */
+   di nomor 24. Kolom `partai-<nomor urut>` adalah kontrak yang dipakai builder
+   legislatif 2024, sama seperti `paslon-<nomor urut>` pada Pilpres 2024; kolom
+   yang tidak dikenali tetap tampil lewat unknownOption(). Daftar ini memuat
+   seluruh 24 partai karena dipakai bersama oleh setiap kontes legislatif;
+   surat suara DPR RI sendiri hanya membawa 18 partai nasional (1–17 dan 24)
+   sebab partai lokal Aceh secara undang-undang hanya ikut DPRA dan DPRK.
+   Surat suara DPRD Provinsi memuat 24 nomor, tetapi keenam partai lokal itu
+   hanya tercetak di Aceh sehingga kolomnya nol di provinsi lain. */
 const PARTY_SPEC_2024 = [
   ['1', 'PKB', 'Partai Kebangkitan Bangsa', 155],
   ['2', 'Gerindra', 'Partai Gerakan Indonesia Raya', 60],
@@ -135,7 +140,9 @@ const DATASETS = [
     gisDir: 'data/gis2024',
     paslon: PASLON_2024,
     parties: PARTY_SPEC_2024,
-    contests: ['pilpres'],
+    // DPRD Kab/Kota belum di-scrape, jadi 2024 baru memuat tiga kontes;
+    // urutannya wajib sama dengan slot pada election2024.json.
+    contests: ['pilpres', 'dpr', 'dprdprov'],
     geoNote: 'batas desa Kemendagri edisi Juli 2026',
     sourceNote: 'scrape KPU Sirekap 2024'
   },

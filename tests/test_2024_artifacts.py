@@ -28,7 +28,19 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 GIS = DATA / "gis2024"
 
-VOTE_COLUMNS = ["paslon-1", "paslon-2", "paslon-3"]
+# Slot order inside every emitted row, mirroring ``CONTESTS`` in the builder.
+# DPR RI carries only the 18 national parties: numbers 18–23 are the Aceh local
+# parties, which by law contest the DPRA and DPRK ballots but never DPR RI.
+# DPRD Provinsi keeps all 24 columns because the DPRA paper does print the six
+# local parties; outside Aceh those columns are legitimately zero.
+CONTESTS = [
+    ("pilpres", ["paslon-1", "paslon-2", "paslon-3"]),
+    ("dpr", [f"partai-{number}" for number in [*range(1, 18), 24]]),
+    ("dprdprov", [f"partai-{number}" for number in range(1, 25)]),
+]
+ACEH_PROVINCE = "11"
+ACEH_LOCAL_COLUMNS = [f"partai-{number}" for number in range(18, 24)]
+CONTEST_IDS = [contest_id for contest_id, _columns in CONTESTS]
 STATS = [
     "total-pemilih",
     "total-pengguna",
@@ -61,7 +73,9 @@ def flatten(raw: dict[str, Any]) -> tuple[dict[str, str], dict[str, str], dict[s
     assert raw.get("key_prefix") == "", (
         "kunci 2024 harus tanpa awalan supaya sama dengan kode Kemendagri"
     )
-    assert raw["contests"] == ["pilpres"], "2024 baru memuat kontes Pilpres"
+    assert raw["contests"] == CONTEST_IDS, (
+        "2024 memuat Pilpres, DPR RI, dan DPRD Provinsi; DPRD Kab/Kota belum di-scrape"
+    )
     names: dict[str, str] = {}
     parents: dict[str, str] = {}
     levels: dict[str, str] = {}
@@ -129,8 +143,14 @@ def check_election(names, parents, levels) -> dict[str, Any]:
     election = load(DATA / "election2024.json")
     audit = load(DATA / "audit2024.json")
     assert election["schema"] == audit["schema"] == 2
-    assert [contest["id"] for contest in election["contests"]] == ["pilpres"]
-    assert election["contests"][0]["vote_columns"] == VOTE_COLUMNS
+    assert [contest["id"] for contest in election["contests"]] == CONTEST_IDS
+    for slot, (contest_id, columns) in enumerate(CONTESTS):
+        assert election["contests"][slot]["vote_columns"] == columns, (
+            f"{contest_id}: kolom suara tidak sepadan surat suara"
+        )
+        assert audit["contests"][contest_id]["vote_columns"] == columns, (
+            f"{contest_id}: kolom suara pada audit tidak sepadan election2024.json"
+        )
     assert election["stats"] == STATS
 
     village_keys = {key for key, level in levels.items() if level == "village"}
@@ -152,10 +172,19 @@ def check_election(names, parents, levels) -> dict[str, Any]:
         f"asing={sorted(stems - province_keys)[:5]}"
     )
 
+    # Each contest is recomputed in its own slot: a village missing from one
+    # ballot carries `null` there, which must stay distinct from a row of zeroes.
     seen: set[str] = set()
-    district_totals: dict[str, list[list[int]]] = {}
-    national_votes = [0] * len(VOTE_COLUMNS)
-    national_stats = [0] * len(STATS)
+    district_totals: dict[str, list[list[list[int]] | None]] = {}
+    national_votes = {contest_id: [0] * len(columns) for contest_id, columns in CONTESTS}
+    national_stats = {contest_id: [0] * len(STATS) for contest_id, _columns in CONTESTS}
+    contest_villages = {contest_id: 0 for contest_id, _columns in CONTESTS}
+    # The one column rule that varies by province: the six Aceh local parties
+    # are printed on the DPRA paper and nowhere else, so their columns must be
+    # zero outside province 11 and carry votes inside it.
+    dprdprov_columns = dict(CONTESTS)["dprdprov"]
+    local_indexes = [dprdprov_columns.index(column) for column in ACEH_LOCAL_COLUMNS]
+    local_votes = {"aceh": 0, "elsewhere": 0}
     for province_key in sorted(province_keys):
         chunk = load(chunk_dir / f"{province_key}.json")
         assert chunk["schema"] == 2
@@ -166,54 +195,91 @@ def check_election(names, parents, levels) -> dict[str, Any]:
             assert village_key.startswith(f"{province_key}."), (
                 f"{village_key} berada pada chunk provinsi {province_key}"
             )
-            assert len(entries) == 1, f"{village_key}: 2024 hanya punya satu kontes"
-            votes, stats = entries[0]
-            assert len(votes) == len(VOTE_COLUMNS) and len(stats) == len(STATS)
-            assert all(isinstance(value, int) and value >= 0 for value in votes + stats), (
-                f"{village_key}: nilai negatif atau bukan bilangan bulat"
+            assert len(entries) == len(CONTESTS), (
+                f"{village_key}: setiap desa harus punya satu slot per kontes"
             )
-            assert stats[5] >= stats[7], f"{village_key}: TPS kosong melebihi jumlah TPS"
-            assert stats[5] >= stats[6], f"{village_key}: TPS tervalidasi melebihi jumlah TPS"
+            assert any(entry is not None for entry in entries), (
+                f"{village_key}: tidak ada satu pun kontes yang memuat baris"
+            )
             district_key = parents[village_key]
-            target = district_totals.setdefault(
-                district_key, [[0] * len(VOTE_COLUMNS), [0] * len(STATS)]
-            )
-            for index, value in enumerate(votes):
-                target[0][index] += value
-                national_votes[index] += value
-            for index, value in enumerate(stats):
-                target[1][index] += value
-                national_stats[index] += value
+            row = district_totals.setdefault(district_key, [None] * len(CONTESTS))
+            for slot, (contest_id, columns) in enumerate(CONTESTS):
+                entry = entries[slot]
+                if entry is None:
+                    continue
+                contest_villages[contest_id] += 1
+                votes, stats = entry
+                assert len(votes) == len(columns) and len(stats) == len(STATS), (
+                    f"{village_key}/{contest_id}: jumlah kolom salah"
+                )
+                assert all(isinstance(value, int) and value >= 0 for value in votes + stats), (
+                    f"{village_key}/{contest_id}: nilai negatif atau bukan bilangan bulat"
+                )
+                assert stats[5] >= stats[7], (
+                    f"{village_key}/{contest_id}: TPS kosong melebihi jumlah TPS"
+                )
+                assert stats[5] >= stats[6], (
+                    f"{village_key}/{contest_id}: TPS tervalidasi melebihi jumlah TPS"
+                )
+                if contest_id == "dprdprov":
+                    where = "aceh" if province_key == ACEH_PROVINCE else "elsewhere"
+                    local_votes[where] += sum(votes[index] for index in local_indexes)
+                target = row[slot]
+                if target is None:
+                    target = row[slot] = [[0] * len(columns), [0] * len(STATS)]
+                for index, value in enumerate(votes):
+                    target[0][index] += value
+                    national_votes[contest_id][index] += value
+                for index, value in enumerate(stats):
+                    target[1][index] += value
+                    national_stats[contest_id][index] += value
     assert seen == village_keys, "chunk hasil dan hierarki memuat desa berbeda"
+    assert local_votes["elsewhere"] == 0, (
+        "partai lokal Aceh tidak tercetak di luar Aceh, jadi kolom 18–23 wajib nol"
+    )
+    assert local_votes["aceh"] > 0, (
+        "surat suara DPRA memuat partai lokal, jadi kolom 18–23 wajib berisi di Aceh"
+    )
 
     assert set(election["kec"]) == district_keys, "roll-up kecamatan tidak sepadan hierarki"
     assert set(district_totals) == district_keys, "ada kecamatan tanpa desa"
-    for district_key, entry in district_totals.items():
-        assert election["kec"][district_key][0] == entry, (
+    for district_key, row in district_totals.items():
+        assert election["kec"][district_key] == row, (
             f"{district_key}: roll-up kecamatan bukan jumlah desanya"
         )
 
-    raw_votes = audit["raw_totals"]["votes"]
-    assert [raw_votes[column] for column in VOTE_COLUMNS] == national_votes, (
-        "total suara nasional tidak sama dengan audit"
-    )
-    audit_stats = audit["validated_totals"]["stats"]
-    assert [audit_stats[name] for name in STATS] == national_stats, (
-        "total statistik nasional tidak sama dengan audit"
-    )
     counts = audit["counts"]
     assert counts["provinces"] == len(province_keys)
     assert counts["districts"] == len(district_keys)
     assert counts["villages"] == len(village_keys)
-    assert counts["tps_rows"] == national_stats[5], "jumlah TPS harus sama dengan baris sumber"
 
-    summary = election["source_summary"]["pilpres"]
-    assert summary["total_tps"] == national_stats[5]
-    assert summary["reported_tps"] == national_stats[5] - national_stats[7]
-    assert summary["note"], "cakupan Sirekap yang tidak penuh wajib dinyatakan di UI"
-    assert summary["anomalies"]["blank_result_row"] == national_stats[7], (
-        "TPS kosong pada audit harus sama dengan stat blank-tps"
-    )
+    for contest_id, columns in CONTESTS:
+        block = audit["contests"][contest_id]
+        raw_votes = block["raw_totals"]["votes"]
+        assert [raw_votes[column] for column in columns] == national_votes[contest_id], (
+            f"{contest_id}: total suara nasional tidak sama dengan audit"
+        )
+        audit_stats = block["validated_totals"]["stats"]
+        assert [audit_stats[name] for name in STATS] == national_stats[contest_id], (
+            f"{contest_id}: total statistik nasional tidak sama dengan audit"
+        )
+        assert block["counts"]["villages"] == contest_villages[contest_id], (
+            f"{contest_id}: jumlah desa pada audit tidak sama dengan slot terisi"
+        )
+        assert block["counts"]["tps_rows"] == national_stats[contest_id][5], (
+            f"{contest_id}: jumlah TPS harus sama dengan baris sumber"
+        )
+
+        summary = election["source_summary"][contest_id]
+        assert summary["total_tps"] == national_stats[contest_id][5]
+        assert summary["reported_tps"] == (
+            national_stats[contest_id][5] - national_stats[contest_id][7]
+        )
+        assert summary["note"], "cakupan Sirekap yang tidak penuh wajib dinyatakan di UI"
+        assert summary["anomalies"]["blank_result_row"] == national_stats[contest_id][7], (
+            f"{contest_id}: TPS kosong pada audit harus sama dengan stat blank-tps"
+        )
+        assert summary["villages"] == contest_villages[contest_id]
     return {
         "votes": national_votes,
         "stats": national_stats,
@@ -321,10 +387,12 @@ def check_gis(names, parents, levels) -> None:
 def main() -> None:
     names, parents, levels = flatten(load(DATA / "wilayah2024.json"))
     totals = check_election(names, parents, levels)
-    print(
-        f"  hasil: {totals['villages']} desa · {totals['districts']} kecamatan · "
-        f"{totals['stats'][5]} TPS · {sum(totals['votes'])} suara paslon"
-    )
+    print(f"  hasil: {totals['villages']} desa · {totals['districts']} kecamatan")
+    for contest_id, _columns in CONTESTS:
+        print(
+            f"    {contest_id}: {totals['stats'][contest_id][5]} TPS · "
+            f"{sum(totals['votes'][contest_id])} suara"
+        )
     if "--skip-gis" not in sys.argv:
         check_gis(names, parents, levels)
     print("test_2024_artifacts.py: hierarki, hasil, audit, dan GeoJSON 2024 konsisten")
