@@ -140,9 +140,8 @@ const DATASETS = [
     gisDir: 'data/gis2024',
     paslon: PASLON_2024,
     parties: PARTY_SPEC_2024,
-    // DPRD Kab/Kota belum di-scrape, jadi 2024 baru memuat tiga kontes;
-    // urutannya wajib sama dengan slot pada election2024.json.
-    contests: ['pilpres', 'dpr', 'dprdprov'],
+    // Urutannya wajib sama dengan slot pada election2024.json.
+    contests: CONTEST_ORDER,
     geoNote: 'batas desa Kemendagri edisi Juli 2026',
     sourceNote: 'scrape KPU Sirekap 2024'
   },

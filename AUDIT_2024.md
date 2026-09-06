@@ -6,11 +6,13 @@ Silakan merujuk ke [`AUDIT_2019.md`](AUDIT_2019.md) untuk dokumentasi audit Pemi
 
 ## Ringkasan Eksekutif
 
-Data Pemilu 2024 bersumber dari hasil *scraping* sistem Sirekap KPU yang **memiliki keterbatasan data numerik**. KPU secara resmi menghentikan penayangan diagram konversi angka pada awal Maret 2024 dan hanya mempertahankan unggahan foto formulir Model C.Hasil (C1-Plano) untuk sebagian TPS. Dari total 823.378 rekaman TPS yang dihimpun, sebanyak **645.836 TPS (78,4%) memiliki data angka perolehan suara**, sedangkan 177.542 TPS lainnya tidak memuat data numerik (*blank*).
+Data Pemilu 2024 bersumber dari hasil *scraping* sistem Sirekap KPU yang **memiliki keterbatasan data numerik**. KPU secara resmi menghentikan penayangan diagram konversi angka pada awal Maret 2024 dan hanya mempertahankan unggahan foto formulir Model C.Hasil (C1-Plano) untuk sebagian TPS. Dari total 823.378 rekaman TPS yang dihimpun, sebanyak **645.858 TPS (78,4%) memiliki data angka perolehan suara**, sedangkan 177.520 TPS lainnya tidak memuat data numerik (*blank*).
 
-Tingkat kelengkapan data numerik ini sangat bervariasi antarwilayah, mulai dari 94,8% di Bengkulu hingga hanya 0,1% di Papua Pegunungan. Oleh karena itu, akumulasi 128.087.760 suara paslon pada *dashboard* visualisasi ini murni merupakan penjumlahan dari TPS yang memuat data numerik, **bukan rekapitulasi hasil penetapan resmi KPU secara nasional**. Peta sebaran dan penentuan paslon unggul di enam provinsi wilayah Papua juga tidak dapat merepresentasikan hasil akhir di wilayah tersebut secara akurat.
+Tingkat kelengkapan data numerik ini sangat bervariasi antarwilayah, mulai dari 94,8% di Bengkulu hingga hanya 0,1% di Papua Pegunungan. Oleh karena itu, akumulasi 128.089.145 suara paslon pada *dashboard* visualisasi ini murni merupakan penjumlahan dari TPS yang memuat data numerik, **bukan rekapitulasi hasil penetapan resmi KPU secara nasional**. Peta sebaran dan penentuan paslon unggul di enam provinsi wilayah Papua juga tidak dapat merepresentasikan hasil akhir di wilayah tersebut secara akurat.
 
-Dataset 2024 kini memuat tiga surat suara sekaligus: Pilpres, DPR RI, dan DPRD Provinsi. Keterbatasan Sirekap terasa **semakin berat pada surat suara legislatif**: dari 823.378 rekaman TPS DPR RI, hanya **426.926 TPS (51,9%) yang memuat angka**, sehingga akumulasi 77.308.092 suara partai setara sekitar setengah dari total suara sah nasional; pada DPRD Provinsi angkanya lebih rendah lagi, yaitu **378.445 dari 823.236 TPS (46,0%)** dengan akumulasi 66.366.387 suara partai. Ketiganya berbagi satu hierarki wilayah dan satu himpunan kunci simpul yang sama; pembacaan hasil pada peta cukup berpindah tab kontes tanpa memuat ulang dataset. Kontes DPRD Kabupaten/Kota belum dimuat karena sumber *scrape*-nya belum dihimpun.
+Dataset 2024 kini memuat keempat surat suara sekaligus: Pilpres, DPR RI, DPRD Provinsi, dan DPRD Kabupaten/Kota. Keterbatasan Sirekap terasa **semakin berat pada surat suara legislatif**: dari 823.378 rekaman TPS DPR RI, hanya **426.926 TPS (51,9%) yang memuat angka**, sehingga akumulasi 77.308.092 suara partai setara sekitar setengah dari total suara sah nasional; pada DPRD Provinsi angkanya lebih rendah lagi, yaitu **378.445 dari 823.236 TPS (46,0%)** dengan akumulasi 66.366.387 suara partai, sedangkan DPRD Kabupaten/Kota mencatat **383.513 dari 823.236 TPS (46,6%)** dengan akumulasi 71.699.129 suara partai. Keempatnya berbagi satu hierarki wilayah dan satu himpunan kunci simpul yang sama; pembacaan hasil pada peta cukup berpindah tab kontes tanpa memuat ulang dataset.
+
+Khusus pada DPRD Kabupaten/Kota perlu dicatat bahwa **dua wilayah tingkat provinsi memang tidak menyelenggarakan kontes ini**, yaitu DKI Jakarta—yang kabupaten dan kota administrasinya tidak memiliki DPRD sendiri—serta Luar Negeri. Seluruh baris TPS di kedua wilayah tersebut tercatat kosong secara sah, bukan karena penarikan datanya gagal.
 
 ## Hasil Pemilu
 
@@ -21,30 +23,31 @@ Seluruh data diproses dari satu sumber *scrape* terpadu tanpa penggabungan linta
 | *Scrape* Sirekap KPU (`hhcw/ppwp`) | Hasil Pilpres 2024 tingkat TPS | `...\scrapping-pemilu-2024\data_pilpres` |
 | *Scrape* Sirekap KPU (`hhcd/pdpr`) | Hasil DPR RI 2024 tingkat TPS | `...\scrapping-pemilu-2024\data_dpr_ri` |
 | *Scrape* Sirekap KPU (`hhcw/pdprdp`) | Hasil DPRD Provinsi 2024 tingkat TPS | `...\scrapping-pemilu-2024\data_dpr_prov` |
+| *Scrape* Sirekap KPU (`hhcw/pdprdk`) | Hasil DPRD Kabupaten/Kota 2024 tingkat TPS | `...\scrapping-pemilu-2024\data_dpr_kabkot` |
 | *Master data* wilayah KPU | Referensi 38 provinsi + Luar Negeri | `...\scrapping-pemilu-2024\master_data\wilayah_provinsi.json` |
 | Tabel DBF *shapefile* desa Kemendagri Juli 2026 | Referensi nama kabupaten/kota dan kecamatan | `SHP GIS\[LapakGIS.com]_BATAS_DESAKEL_AR_EDISI_JULI_2026_` |
 
-*Pipeline* memproses **643 berkas JSON** untuk masing-masing surat suara, yakni Pilpres (0,95 GiB), DPR RI (4,87 GiB), dan DPRD Provinsi (4,43 GiB); gabungannya mencakup 83.860 desa/kelurahan. Ketiga surat suara dipindai dalam satu proses *build* karena berbagi satu hierarki wilayah; setiap baris keluaran memuat satu slot per kontes mengikuti urutan `CONTESTS` pada `build_2024_data.py`. Seluruh rekaman berhasil dimuat ke dalam artefak visualisasi tanpa ada data yang terbuang. Data TPS yang tidak memiliki angka perolehan suara dikategorikan secara khusus sebagai data kosong melalui indikator statistik `blank-tps`, bukan dicatat sebagai perolehan suara nol (`0`).
+*Pipeline* memproses **643 berkas JSON** untuk masing-masing surat suara, yakni Pilpres (0,95 GiB), DPR RI (4,87 GiB), DPRD Provinsi (4,43 GiB), dan DPRD Kabupaten/Kota (4,19 GiB); gabungannya mencakup 83.860 desa/kelurahan. Keempat surat suara dipindai dalam satu proses *build* karena berbagi satu hierarki wilayah; setiap baris keluaran memuat satu slot per kontes mengikuti urutan `CONTESTS` pada `build_2024_data.py`. Seluruh rekaman berhasil dimuat ke dalam artefak visualisasi tanpa ada data yang terbuang. Data TPS yang tidak memiliki angka perolehan suara dikategorikan secara khusus sebagai data kosong melalui indikator statistik `blank-tps`, bukan dicatat sebagai perolehan suara nol (`0`).
 
-| Parameter / Indikator | Pilpres | DPR RI | DPRD Provinsi |
-| --- | ---: | ---: | ---: |
-| Berkas sumber | 643 | 643 | 643 |
-| Desa/kelurahan bersuara | 83.860 | 83.860 | 83.860 |
-| Total baris rekaman TPS | 823.378 | 823.378 | 823.236 |
-| TPS dengan data angka perolehan suara | 645.836 (78,4%) | 426.926 (51,9%) | 378.445 (46,0%) |
-| TPS lolos validasi konsistensi metadata | 494.311 (60,0%) | 402.964 (48,9%) | 353.246 (42,9%) |
-| Σ Total seluruh suara | 128.087.760 | 77.308.092 | 66.366.387 |
+| Parameter / Indikator | Pilpres | DPR RI | DPRD Provinsi | DPRD Kab/Kota |
+| --- | ---: | ---: | ---: | ---: |
+| Berkas sumber | 643 | 643 | 643 | 643 |
+| Desa/kelurahan bersuara | 83.860 | 83.860 | 83.860 | 83.860 |
+| Total baris rekaman TPS | 823.378 | 823.378 | 823.236 | 823.236 |
+| TPS dengan data angka perolehan suara | 645.858 (78,4%) | 426.926 (51,9%) | 378.445 (46,0%) | 383.513 (46,6%) |
+| TPS lolos validasi konsistensi metadata | 494.311 (60,0%) | 402.964 (48,9%) | 353.246 (42,9%) | 353.140 (42,9%) |
+| Σ Total seluruh suara | 128.089.145 | 77.308.092 | 66.366.387 | 71.699.129 |
 
-Struktur hierarki wilayah berlaku sama untuk ketiga kontes: 83.860 desa/kelurahan, 7.406 kecamatan, 643 kabupaten/kota (termasuk 129 PPLN), serta 39 wilayah tingkat provinsi (38 provinsi + Luar Negeri).
+Struktur hierarki wilayah berlaku sama untuk keempat kontes: 83.860 desa/kelurahan, 7.406 kecamatan, 643 kabupaten/kota (termasuk 129 PPLN), serta 39 wilayah tingkat provinsi (38 provinsi + Luar Negeri).
 
 ### Perolehan Suara Pilpres
 
 | Pasangan Calon | Σ Suara |
 | --- | ---: |
-| 01 — Anies–Muhaimin | 31.377.721 |
-| 02 — Prabowo–Gibran | 75.339.817 |
-| 03 — Ganjar–Mahfud | 21.370.222 |
-| **Total** | **128.087.760** |
+| 01 — Anies–Muhaimin | 31.378.267 |
+| 02 — Prabowo–Gibran | 75.340.215 |
+| 03 — Ganjar–Mahfud | 21.370.663 |
+| **Total** | **128.089.145** |
 
 ### Perolehan Suara DPR RI
 
@@ -150,22 +153,70 @@ Dengan demikian selisih 142 baris TPS terhadap Pilpres maupun DPR RI (823.378 be
 
 Terlepas dari kekosongan Kuala Lumpur (U) di atas, **seluruh 3.075 baris TPS luar negeri yang berhasil ditarik tercatat kosong tanpa satu pun angka**. Hal ini bukan kegagalan penarikan data, melainkan konsekuensi regulasi: pemilih luar negeri hanya memberikan suara untuk Pilpres dan DPR RI (Dapil DKI Jakarta II), dan tidak memilih DPRD Provinsi. Baris TPS luar negeri karena itu tercatat sebagai `blank-tps`, konsisten dengan penanganan TPS dalam negeri yang datanya tidak terkonversi.
 
+### Perolehan Suara DPRD Kabupaten/Kota
+
+Sama seperti DPRD Provinsi, surat suara DPRD Kabupaten/Kota **memakai seluruh 24 nomor urut**. Di 36 provinsi penyelenggara lainnya surat suara hanya mencetak 18 partai nasional, sedangkan di Aceh surat suara DPRK turut memuat enam partai lokal bernomor 18–23 sesuai Undang-Undang Pemerintahan Aceh. Kolom keluaran karena itu dibuat lengkap dari `partai-1` sampai `partai-24`; **nilai nol pada kolom 18–23 di luar Aceh berarti partainya tidak tercetak pada surat suara, bukan berarti tidak ada yang memilihnya**. Angka perolehan suara partai kembali diambil dari medan `jml_suara_total`, yakni jumlah suara partai berikut seluruh calegnya.
+
+Berbeda dengan ketiga kontes lainnya, kontes ini **tidak diselenggarakan di dua wilayah tingkat provinsi**. DKI Jakarta tidak mengenal DPRD tingkat kabupaten/kota—satu kabupaten administrasi dan lima kota administrasinya dipimpin bupati/wali kota yang diangkat gubernur dan tidak memiliki dewan sendiri—sedangkan pemilih luar negeri hanya memberikan suara untuk Pilpres dan DPR RI. Seluruh 30.766 baris TPS DKI Jakarta dan 3.075 baris TPS luar negeri karena itu tercatat kosong **secara sah menurut regulasi**, bukan karena penarikan datanya gagal.
+
+| No. Urut | Partai | Nama Lengkap | Σ Suara | Proporsi |
+| ---: | --- | --- | ---: | ---: |
+| 3 | PDI-P | PDI Perjuangan | 11.881.313 | 16,57% |
+| 4 | Golkar | Partai Golkar | 9.579.686 | 13,36% |
+| 1 | PKB | Partai Kebangkitan Bangsa | 9.218.510 | 12,86% |
+| 2 | Gerindra | Partai Gerakan Indonesia Raya | 9.009.732 | 12,57% |
+| 5 | NasDem | Partai NasDem | 6.374.526 | 8,89% |
+| 8 | PKS | Partai Keadilan Sejahtera | 5.548.999 | 7,74% |
+| 14 | Demokrat | Partai Demokrat | 5.384.806 | 7,51% |
+| 12 | PAN | Partai Amanat Nasional | 4.566.468 | 6,37% |
+| 17 | PPP | Partai Persatuan Pembangunan | 4.029.757 | 5,62% |
+| 10 | Hanura | Partai Hati Nurani Rakyat | 1.520.742 | 2,12% |
+| 16 | Perindo | Partai Perindo | 1.196.952 | 1,67% |
+| 15 | PSI | Partai Solidaritas Indonesia | 783.386 | 1,09% |
+| 7 | Gelora | Partai Gelombang Rakyat Indonesia | 706.739 | 0,99% |
+| 13 | PBB | Partai Bulan Bintang | 590.950 | 0,82% |
+| 24 | Ummat | Partai Ummat | 356.169 | 0,50% |
+| 6 | Buruh | Partai Buruh | 280.791 | 0,39% |
+| 9 | PKN | Partai Kebangkitan Nusantara | 219.555 | 0,31% |
+| 21 | PA | Partai Aceh *(lokal Aceh)* | 191.468 | 0,27% |
+| 11 | Garuda | Partai Garda Republik Indonesia | 131.353 | 0,18% |
+| 18 | PNA | Partai Nanggroe Aceh *(lokal Aceh)* | 60.273 | 0,08% |
+| 22 | PAS Aceh | Partai Adil Sejahtera Aceh *(lokal Aceh)* | 42.627 | 0,06% |
+| 20 | PDA | Partai Darul Aceh *(lokal Aceh)* | 10.869 | 0,02% |
+| 23 | SIRA | Partai SIRA *(lokal Aceh)* | 10.271 | 0,01% |
+| 19 | Gabthat | Partai Generasi Atjeh Beusaboh Tha'at Dan Taqwa *(lokal Aceh)* | 3.187 | 0,00% |
+| | | **Total** | **71.699.129** | **100,00%** |
+
+Keenam partai lokal Aceh mengumpulkan 318.695 suara, seluruhnya berasal dari Provinsi Aceh. Sebagaimana pada DPRD Provinsi, `tests/test_2024_artifacts.py` memverifikasi hal ini secara eksplisit; khusus untuk kontes ini pengujian juga menuntut agar penjumlahan seluruh kolom pada kode provinsi `31` dan `99` bernilai tepat nol.
+
+#### Cakupan dan Kelengkapan DPRD Kabupaten/Kota
+
+Kontes ini terekam utuh sejak penarikan pertama: 643 berkas sumber, 823.236 baris TPS pada seluruh 83.860 desa/kelurahan, tanpa satu pun slot `null`. Jumlah barisnya identik dengan DPRD Provinsi, dan selisih 142 baris terhadap Pilpres maupun DPR RI berasal dari kasus yang persis sama, yaitu PPLN Kuala Lumpur (U):
+
+| Kode | Desa/Kelurahan | Baris TPS |
+| --- | --- | ---: |
+| `99.BF.01.0001` | Kuala Lumpur, Malaysia (U) | 0 dari 142 |
+
+Kelurahan tersebut menyatakan `total_tps` sebanyak 142 tetapi tidak memuat satu pun baris `tps_results`, dan merupakan satu-satunya `tps_count_mismatch` pada kontes ini.
+
+Dari 823.236 baris tersebut, **383.513 TPS (46,6%) memuat angka**, sedikit lebih tinggi daripada DPRD Provinsi (46,0%). Angka itu perlu dibaca dengan penyebut yang tepat: apabila DKI Jakarta dan Luar Negeri—yang memang tidak menyelenggarakan kontes ini—dikeluarkan, cakupannya menjadi **383.513 dari 789.395 TPS (48,6%)**. Pada penyebut 789.395 TPS yang sama, Pilpres tercatat 78,7%, DPR RI 52,8%, dan DPRD Provinsi 47,0%; jadi DPRD Kabupaten/Kota berada di atas DPRD Provinsi tetapi tetap di bawah DPR RI.
+
 ### Perbandingan dengan Hasil Rekapitulasi Resmi KPU
 
-Angka hasil penetapan resmi KPU secara sengaja **tidak dimasukkan** ke dalam repositori ini dan tidak dijadikan acuan pembanding otomatis di dalam *pipeline*. Pengguna disarankan untuk merujuk langsung pada Surat Keputusan KPU mengenai Penetapan Hasil Pemilu 2024 sebelum mengutip angka perolehan suara dari *dashboard* ini. Verifikasi yang dapat dipastikan secara objektif dari data pada repositori ini adalah tingkat kelengkapan internal: 78,4% TPS memuat angka perolehan suara pada Pilpres, 51,9% pada DPR RI, dan 46,0% pada DPRD Provinsi. Selisih terhadap total suara nasional sepenuhnya disebabkan oleh proporsi data Sirekap yang belum terkonversi menjadi angka saat proses penayangan dihentikan.
+Angka hasil penetapan resmi KPU secara sengaja **tidak dimasukkan** ke dalam repositori ini dan tidak dijadikan acuan pembanding otomatis di dalam *pipeline*. Pengguna disarankan untuk merujuk langsung pada Surat Keputusan KPU mengenai Penetapan Hasil Pemilu 2024 sebelum mengutip angka perolehan suara dari *dashboard* ini. Verifikasi yang dapat dipastikan secara objektif dari data pada repositori ini adalah tingkat kelengkapan internal: 78,4% TPS memuat angka perolehan suara pada Pilpres, 51,9% pada DPR RI, 46,0% pada DPRD Provinsi, dan 46,6% pada DPRD Kabupaten/Kota. Selisih terhadap total suara nasional sepenuhnya disebabkan oleh proporsi data Sirekap yang belum terkonversi menjadi angka saat proses penayangan dihentikan.
 
 ### Cakupan Kelengkapan Data per Provinsi
 
 - **TPS Berangka:** Jumlah rekaman TPS yang memuat setidaknya satu data angka perolehan suara pada kontes bersangkutan.
 - **Tervalidasi:** Rekaman TPS yang blok data `administrasi`-nya lengkap serta lolos seluruh uji konsistensi logika, sehingga dapat diikutsertakan ke dalam kalkulasi agregat partisipasi pemilih.
 
-Karena setiap surat suara membawa blok `administrasi` sendiri, ketiga tabel di bawah dihitung secara terpisah dan angkanya memang tidak identik.
+Karena setiap surat suara membawa blok `administrasi` sendiri, keempat tabel di bawah dihitung secara terpisah dan angkanya memang tidak identik.
 
 #### Pilpres
 
 | Kode | Provinsi | Σ Suara Paslon | Total TPS | TPS Berangka | % Berangka | TPS Tervalidasi | % Tervalidasi |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 11 | Aceh | 2.513.229 | 16.046 | 12.798 | 79,8% | 9.392 | 58,5% |
+| 11 | Aceh | 2.514.614 | 16.046 | 12.820 | 79,9% | 9.392 | 58,5% |
 | 12 | Sumatera Utara | 5.026.536 | 45.875 | 28.895 | 63,0% | 18.168 | 39,6% |
 | 13 | Sumatera Barat | 2.741.940 | 17.569 | 15.632 | 89,0% | 13.322 | 75,8% |
 | 14 | Riau | 2.573.422 | 19.366 | 13.575 | 70,1% | 9.950 | 51,4% |
@@ -204,7 +255,7 @@ Karena setiap surat suara membawa blok `administrasi` sendiri, ketiga tabel di b
 | 95 | Papua Pegunungan | 725 | 5.850 | 4 | 0,1% | 3 | 0,1% |
 | 96 | Papua Barat Daya | 145.846 | 2.156 | 866 | 40,2% | 445 | 20,6% |
 | 99 | Luar Negeri | 487.498 | 3.217 | 1.823 | 56,7% | 1.315 | 40,9% |
-| | **Nasional** | **128.087.760** | **823.378** | **645.836** | **78,4%** | **494.311** | **60,0%** |
+| | **Nasional** | **128.089.145** | **823.378** | **645.858** | **78,4%** | **494.311** | **60,0%** |
 
 Sebagai catatan khusus, data Provinsi Papua Pegunungan hanya memuat **4 rekaman TPS berangka** dari total 5.850 TPS yang ada. Oleh sebab itu, angka akumulasi 725 suara untuk provinsi ini sama sekali tidak dapat dianggap sebagai representasi perolehan suara tingkat provinsi.
 
@@ -306,6 +357,58 @@ Cakupan DPRD Provinsi lebih rendah lagi dibanding DPR RI, membentang dari 82,2% 
 
 Setelah penarikan ulang Sulawesi Tengah, jumlah TPS pada kontes ini identik dengan Pilpres di seluruh provinsi dalam negeri; satu-satunya selisih yang tersisa berada di Luar Negeri (lihat [Wilayah Tanpa Data DPRD Provinsi](#wilayah-tanpa-data-dprd-provinsi)).
 
+#### DPRD Kabupaten/Kota
+
+| Kode | Provinsi | Σ Suara Partai | Total TPS | TPS Berangka | % Berangka | TPS Tervalidasi | % Tervalidasi |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 11 | Aceh | 1.340.114 | 16.046 | 7.065 | 44,0% | 6.666 | 41,5% |
+| 12 | Sumatera Utara | 2.210.868 | 45.875 | 13.326 | 29,0% | 12.061 | 26,3% |
+| 13 | Sumatera Barat | 2.052.105 | 17.569 | 12.289 | 69,9% | 11.358 | 64,6% |
+| 14 | Riau | 1.396.546 | 19.366 | 8.062 | 41,6% | 7.334 | 37,9% |
+| 15 | Jambi | 1.182.047 | 11.160 | 6.380 | 57,2% | 5.876 | 52,7% |
+| 16 | Sumatera Selatan | 2.419.774 | 25.985 | 12.636 | 48,6% | 11.211 | 43,1% |
+| 17 | Bengkulu | 967.362 | 6.210 | 4.970 | 80,0% | 4.365 | 70,3% |
+| 18 | Lampung | 3.667.749 | 25.825 | 19.834 | 76,8% | 17.339 | 67,1% |
+| 19 | Kepulauan Bangka Belitung | 467.321 | 4.116 | 2.320 | 56,4% | 1.936 | 47,0% |
+| 21 | Kepulauan Riau | 328.656 | 5.914 | 1.868 | 31,6% | 1.544 | 26,1% |
+| 31 | DKI Jakarta | 0 | 30.766 | 0 | 0,0% | 0 | 0,0% |
+| 32 | Jawa Barat | 10.030.995 | 140.457 | 52.326 | 37,3% | 49.767 | 35,4% |
+| 33 | Jawa Tengah | 12.556.718 | 117.299 | 68.172 | 58,1% | 63.074 | 53,8% |
+| 34 | DI Yogyakarta | 1.054.644 | 11.932 | 5.483 | 46,0% | 5.034 | 42,2% |
+| 35 | Jawa Timur | 13.709.694 | 120.666 | 69.458 | 57,6% | 67.776 | 56,2% |
+| 36 | Banten | 2.347.445 | 33.324 | 11.729 | 35,2% | 10.830 | 32,5% |
+| 51 | Bali | 693.983 | 12.809 | 3.441 | 26,9% | 3.080 | 24,0% |
+| 52 | Nusa Tenggara Barat | 1.902.606 | 16.243 | 10.270 | 63,2% | 8.573 | 52,8% |
+| 53 | Nusa Tenggara Timur | 1.125.282 | 16.746 | 6.796 | 40,6% | 6.174 | 36,9% |
+| 61 | Kalimantan Barat | 1.744.710 | 17.626 | 10.314 | 58,5% | 9.200 | 52,2% |
+| 62 | Kalimantan Tengah | 748.426 | 7.830 | 4.125 | 52,7% | 3.631 | 46,4% |
+| 63 | Kalimantan Selatan | 878.431 | 13.584 | 5.194 | 38,2% | 4.666 | 34,3% |
+| 64 | Kalimantan Timur | 659.344 | 11.441 | 3.555 | 31,1% | 3.236 | 28,3% |
+| 65 | Kalimantan Utara | 237.289 | 2.295 | 1.482 | 64,6% | 1.205 | 52,5% |
+| 71 | Sulawesi Utara | 1.073.012 | 8.240 | 5.553 | 67,4% | 4.636 | 56,3% |
+| 72 | Sulawesi Tengah | 1.164.551 | 9.462 | 6.299 | 66,6% | 5.824 | 61,6% |
+| 73 | Sulawesi Selatan | 2.860.845 | 26.357 | 14.843 | 56,3% | 12.751 | 48,4% |
+| 74 | Sulawesi Tenggara | 959.562 | 8.154 | 5.178 | 63,5% | 4.512 | 55,3% |
+| 75 | Gorontalo | 568.705 | 3.539 | 2.864 | 80,9% | 2.745 | 77,6% |
+| 76 | Sulawesi Barat | 642.525 | 4.219 | 3.487 | 82,6% | 3.113 | 73,8% |
+| 81 | Maluku | 300.968 | 5.622 | 1.648 | 29,3% | 1.436 | 25,5% |
+| 82 | Maluku Utara | 254.343 | 4.192 | 1.632 | 38,9% | 1.374 | 32,8% |
+| 91 | Papua | 51.369 | 3.109 | 299 | 9,6% | 257 | 8,3% |
+| 92 | Papua Barat | 20.524 | 1.923 | 133 | 6,9% | 118 | 6,1% |
+| 93 | Papua Selatan | 18.352 | 1.770 | 113 | 6,4% | 111 | 6,3% |
+| 94 | Papua Tengah | 17.893 | 4.484 | 70 | 1,6% | 44 | 1,0% |
+| 95 | Papua Pegunungan | 232 | 5.850 | 1 | 0,0% | 1 | 0,0% |
+| 96 | Papua Barat Daya | 44.139 | 2.156 | 298 | 13,8% | 282 | 13,1% |
+| 99 | Luar Negeri | 0 | 3.075 | 0 | 0,0% | 0 | 0,0% |
+| | **Nasional** | **71.699.129** | **823.236** | **383.513** | **46,6%** | **353.140** | **42,9%** |
+
+Dua baris pada tabel ini bernilai nol karena alasan regulasi, bukan karena data yang hilang:
+
+- **DKI Jakarta** tercatat 30.766 TPS dengan 0 TPS berangka, sebab kabupaten dan kota administrasi di provinsi ini tidak memiliki DPRD sendiri sehingga tidak ada surat suara DPRD Kabupaten/Kota yang dicetak.
+- **Luar Negeri** tercatat 3.075 TPS dengan 0 TPS berangka, sebab pemilih PPLN hanya memilih Pilpres dan DPR RI.
+
+Di luar kedua wilayah tersebut, cakupan kontes ini membentang dari 82,6% di Sulawesi Barat hingga 1 rekaman TPS berangka saja di Papua Pegunungan. Terhadap penyebut 789.395 TPS pada 37 provinsi penyelenggara, cakupan nasionalnya menjadi 48,6%—lebih tinggi daripada DPRD Provinsi (47,0% pada penyebut yang sama), namun masih di bawah DPR RI (52,8%).
+
 
 ## Standarisasi Identitas Wilayah
 
@@ -322,29 +425,31 @@ Nama resmi provinsi mengacu pada *master data* KPU, sedangkan nama kabupaten/kot
 
 ## Penanganan Data Kosong, Angka Nol, dan Anomali
 
-Aturan validasi identik untuk ketiga surat suara dan dijalankan secara terpisah pada masing-masing kontes, sebab setiap surat suara membawa blok `chart` dan `administrasi`-nya sendiri.
+Aturan validasi identik untuk keempat surat suara dan dijalankan secara terpisah pada masing-masing kontes, sebab setiap surat suara membawa blok `chart` dan `administrasi`-nya sendiri.
 
-| Metrik / Klasifikasi Anomali | Pilpres | DPR RI | DPRD Provinsi | Penjelasan Teknis |
-| --- | ---: | ---: | ---: | --- |
-| `blank_result_row` | 177.542 | 396.452 | 444.791 | Blok `chart` kosong; TPS tidak memuat data numerik hasil perolehan suara |
-| `administrasi_missing_row` | 293.817 | 395.791 | 448.619 | Blok `administrasi` tidak tersedia; angka partisipasi tidak dapat dihitung |
-| `administrasi_partial_row` | 88 | 2 | 0 | Blok `administrasi` tersedia tetapi terdapat atribut bernilai `null` |
-| `invalid_stats_row` | 35.162 | 24.621 | 21.371 | Blok administrasi lengkap tetapi gagal pada uji konsistensi logika |
-| `pengguna_ne_suara_total` | 32.912 | 22.285 | 18.325 | Jumlah pengguna hak pilih tidak sama dengan total surat suara (`pengguna_total_j ≠ suara_total`) |
-| `option_sum_ne_suara_sah` | 23.610 | 94.800 | 76.938 | Akumulasi suara seluruh pilihan tidak sama dengan suara sah (`Σ pilihan ≠ suara_sah`) |
-| `pengguna_gt_pemilih` | 13.008 | 8.304 | 7.010 | Jumlah pengguna hak pilih melebihi DPT (**dicatat secara transparan, tidak digugurkan**) |
-| `suara_total_ne_sah_plus_tidak_sah` | 5.475 | 4.283 | 6.591 | Total surat suara tidak sama dengan penjumlahan suara sah dan tidak sah (`suara_total ≠ suara_sah + suara_tidak_sah`) |
-| `partial_chart_row` | 155 | 0 | 0 | Blok `chart` memuat angka, tetapi tidak untuk seluruh pilihan pada surat suara |
-| `tps_count_mismatch` | 0 | 0 | 1 | Medan `total_tps` desa tidak sama dengan jumlah baris `tps_results` yang benar-benar ada; satu-satunya kasus yang tersisa adalah PPLN Kuala Lumpur (U) pada DPRD Provinsi, setelah Desa Sekarwangi pada DPR RI tertutup oleh penarikan ulang |
-| `outlier_vote_row` | 0 | 0 | 0 | Tidak ditemukan perolehan suara satu pilihan > 1.000 di luar wilayah Papua dan Luar Negeri |
-| `unknown_chart_option` | 0 | 0 | 0 | Blok `chart` tidak memuat kunci pilihan di luar surat suara kontes bersangkutan |
-| `off_ballot_chart_option` | 0 | 0 | 0 | Blok `chart` tidak pernah memuat partai lokal Aceh (nomor 18–23) di luar Provinsi Aceh |
-| `party_map_mismatch` | 0 | 0 | 0 | Kamus `partai_map` pada berkas sumber DPRD Provinsi selalu memuat tepat 24 nomor urut yang dikenali |
-| `placeholder_chart_votes` | 0 | 0 | 0 | Kunci pengganti `"null"` pada `chart` Pilpres tidak pernah memuat angka suara |
+| Metrik / Klasifikasi Anomali | Pilpres | DPR RI | DPRD Provinsi | DPRD Kab/Kota | Penjelasan Teknis |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `blank_result_row` | 177.520 | 396.452 | 444.791 | 439.723 | Blok `chart` kosong; TPS tidak memuat data numerik hasil perolehan suara |
+| `administrasi_missing_row` | 293.795 | 395.791 | 448.619 | 448.792 | Blok `administrasi` tidak tersedia; angka partisipasi tidak dapat dihitung |
+| `administrasi_partial_row` | 110 | 2 | 0 | 0 | Blok `administrasi` tersedia tetapi terdapat atribut bernilai `null` |
+| `invalid_stats_row` | 35.162 | 24.621 | 21.371 | 21.304 | Blok administrasi lengkap tetapi gagal pada uji konsistensi logika |
+| `pengguna_ne_suara_total` | 32.912 | 22.285 | 18.325 | 18.696 | Jumlah pengguna hak pilih tidak sama dengan total surat suara (`pengguna_total_j ≠ suara_total`) |
+| `option_sum_ne_suara_sah` | 23.610 | 94.800 | 76.938 | 67.434 | Akumulasi suara seluruh pilihan tidak sama dengan suara sah (`Σ pilihan ≠ suara_sah`) |
+| `pengguna_gt_pemilih` | 13.008 | 8.304 | 7.010 | 6.727 | Jumlah pengguna hak pilih melebihi DPT (**dicatat secara transparan, tidak digugurkan**) |
+| `suara_total_ne_sah_plus_tidak_sah` | 5.475 | 4.283 | 6.591 | 5.814 | Total surat suara tidak sama dengan penjumlahan suara sah dan tidak sah (`suara_total ≠ suara_sah + suara_tidak_sah`) |
+| `partial_chart_row` | 155 | 0 | 0 | 0 | Blok `chart` memuat angka, tetapi tidak untuk seluruh pilihan pada surat suara |
+| `tps_count_mismatch` | 0 | 0 | 1 | 1 | Medan `total_tps` desa tidak sama dengan jumlah baris `tps_results` yang benar-benar ada; kasus yang tersisa adalah PPLN Kuala Lumpur (U) pada kedua kontes DPRD, setelah Desa Sekarwangi pada DPR RI tertutup oleh penarikan ulang |
+| `outlier_vote_row` | 0 | 0 | 0 | 0 | Tidak ditemukan perolehan suara satu pilihan > 1.000 di luar wilayah Papua dan Luar Negeri |
+| `unknown_chart_option` | 0 | 0 | 0 | 0 | Blok `chart` tidak memuat kunci pilihan di luar surat suara kontes bersangkutan |
+| `off_ballot_chart_option` | 0 | 0 | 0 | 0 | Blok `chart` tidak pernah memuat partai lokal Aceh (nomor 18–23) di luar Provinsi Aceh |
+| `party_map_mismatch` | 0 | 0 | 0 | 0 | Kamus `partai_map` pada berkas sumber kedua kontes DPRD selalu memuat tepat 24 nomor urut yang dikenali |
+| `placeholder_chart_votes` | 0 | 0 | 0 | 0 | Kunci pengganti `"null"` pada `chart` Pilpres tidak pernah memuat angka suara |
 
-Angka `option_sum_ne_suara_sah` pada kedua kontes legislatif (94.800 baris DPR RI dan 76.938 baris DPRD Provinsi) jauh lebih tinggi daripada Pilpres. Hal ini wajar karena surat suara legislatif menuntut penjumlahan 18 kolom partai—masing-masing merupakan hasil pembacaan OCR tersendiri—sehingga peluang satu kolom salah baca jauh lebih besar dibanding penjumlahan tiga kolom paslon. Baris seperti ini tetap dipertahankan apa adanya dan hanya dicatat, tidak dikoreksi maupun digugurkan.
+Angka `option_sum_ne_suara_sah` pada ketiga kontes legislatif (94.800 baris DPR RI, 76.938 baris DPRD Provinsi, dan 67.434 baris DPRD Kabupaten/Kota) jauh lebih tinggi daripada Pilpres. Hal ini wajar karena surat suara legislatif menuntut penjumlahan 18 kolom partai—masing-masing merupakan hasil pembacaan OCR tersendiri—sehingga peluang satu kolom salah baca jauh lebih besar dibanding penjumlahan tiga kolom paslon. Baris seperti ini tetap dipertahankan apa adanya dan hanya dicatat, tidak dikoreksi maupun digugurkan.
 
-Dua metrik terakhir, `off_ballot_chart_option` dan `party_map_mismatch`, khusus ditambahkan untuk kontes DPRD Provinsi. Keduanya menjaga agar perbedaan susunan surat suara Aceh tidak menjadi tebakan diam-diam: pemeriksaan kelengkapan `chart` menuntut 24 kolom di Provinsi Aceh dan 18 kolom di provinsi lain, dan kemunculan partai lokal Aceh di luar Aceh—yang akan menandakan *scrape* tercampur antarprovinsi—akan dilaporkan, bukan diikutkan diam-diam ke dalam penjumlahan.
+Dua metrik terakhir, `off_ballot_chart_option` dan `party_map_mismatch`, khusus ditambahkan untuk kedua kontes DPRD. Keduanya menjaga agar perbedaan susunan surat suara Aceh tidak menjadi tebakan diam-diam: pemeriksaan kelengkapan `chart` menuntut 24 kolom di Provinsi Aceh dan 18 kolom di provinsi lain, dan kemunculan partai lokal Aceh di luar Aceh—yang akan menandakan *scrape* tercampur antarprovinsi—akan dilaporkan, bukan diikutkan diam-diam ke dalam penjumlahan.
+
+Perlu dicatat bahwa `blank_result_row` pada DPRD Kabupaten/Kota (439.723) memuat seluruh 30.766 baris TPS DKI Jakarta dan 3.075 baris TPS luar negeri yang kosong menurut regulasi. Di luar kedua wilayah itu, baris kosongnya berjumlah 405.882 dari 789.395—lebih sedikit daripada DPRD Provinsi pada penyebut yang sama.
 
 Kriteria validasi data mengacu pada standar *pipeline* 2019 dengan penyesuaian khusus. Sebuah rekaman TPS dinyatakan lolos ke dalam kelompok `validated-tps` (sehingga kelima indikator partisipasinya diikutsertakan ke dalam perhitungan agregat) apabila memenuhi seluruh ketentuan berikut:
 
@@ -355,7 +460,7 @@ Kriteria validasi data mengacu pada standar *pipeline* 2019 dengan penyesuaian k
 5. Memenuhi persamaan konsistensi pengguna: `pengguna_total_j = suara_total`.
 
 **Pengecualian Aturan DPT:**
-Klausul `total-pengguna ≤ total-pemilih` yang diterapkan pada *pipeline* 2019 **sengaja ditiadakan** pada Pemilu 2024. Hal ini dikarenakan kolom `total-pemilih` pada data Sirekap hanya mencatat pemilih terdaftar dalam DPT, sedangkan `total-pengguna` mencakup pemilih tambahan (DPTb) dan pemilih khusus (DPK) yang secara regulasi tidak terdaftar dalam DPT awal. Jika klausul tersebut dipaksakan, sebanyak 13.008 TPS Pilpres, 8.304 TPS DPR RI, dan 6.990 TPS DPRD Provinsi yang sebenarnya sah dan wajar akan gugur secara keliru.
+Klausul `total-pengguna ≤ total-pemilih` yang diterapkan pada *pipeline* 2019 **sengaja ditiadakan** pada Pemilu 2024. Hal ini dikarenakan kolom `total-pemilih` pada data Sirekap hanya mencatat pemilih terdaftar dalam DPT, sedangkan `total-pengguna` mencakup pemilih tambahan (DPTb) dan pemilih khusus (DPK) yang secara regulasi tidak terdaftar dalam DPT awal. Jika klausul tersebut dipaksakan, sebanyak 13.008 TPS Pilpres, 8.304 TPS DPR RI, 7.010 TPS DPRD Provinsi, dan 6.727 TPS DPRD Kabupaten/Kota yang sebenarnya sah dan wajar akan gugur secara keliru.
 
 **Independensi Data Hasil dan Metadata Administrasi:**
 Berbeda dengan skema 2019 di mana TPS tanpa angka hasil otomatis dianggap tidak valid, pada skema 2024 kedua status tersebut bersifat independen. Suatu TPS bisa saja tidak memiliki data numerik perolehan suara (*blank chart*), namun tetap memiliki blok administrasi yang valid dan utuh. Oleh karena itu, panel visualisasi menghitung TPS yang belum tervalidasi secara lugas melalui selisih `tps − validated-tps`.

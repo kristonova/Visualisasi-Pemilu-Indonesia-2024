@@ -7,6 +7,8 @@ https://github.com/… scrapping-pemilu-2024, one directory per ballot:
 * ``data_dpr_ri/<prov>/<kab>.json``   DPR RI ballot (eighteen national parties)
 * ``data_dpr_prov/<prov>/<kab>.json`` DPRD Provinsi ballot (the same eighteen
   everywhere, plus Aceh's six local parties on the DPRA paper)
+* ``data_dpr_kabkot/<prov>/<kab>.json`` DPRD Kabupaten/Kota ballot (the same
+  eighteen, plus Aceh's six local parties on the DPRK paper)
 
 Every village is keyed by its Kemendagri (PUM) code, so the emitted node keys
 are literally ``11.01.01.2015`` and join to the Kemendagri village shapefile
@@ -14,7 +16,7 @@ without any name matching.  That is the whole reason the 2024 tree does not
 reuse the opaque KPU 2019 tokens: the 2019 hierarchy carries no Kemendagri code
 at all.
 
-All three ballots are scanned in the same run because they share one hierarchy
+All four ballots are scanned in the same run because they share one hierarchy
 and one set of node keys; every emitted row carries one slot per contest, in the
 order of ``CONTESTS``, exactly like the 2019 artifacts.  A contest with no data
 for an area gets ``null`` in its slot rather than a row of zeroes, so "nobody
@@ -79,6 +81,17 @@ DPRD_PROV_NOTE = (
     "negeri tidak memilih DPRD Provinsi, jadi seluruh TPS PPLN tercatat kosong "
     "pada kontes ini."
 )
+DPRD_KAB_NOTE = (
+    COVERAGE_NOTE
+    + " Surat suara DPRD Kabupaten/Kota memuat 18 partai nasional; hanya di Aceh "
+    "surat suara DPRK turut memuat enam partai lokal bernomor 18–23, sehingga "
+    "di luar Aceh keenam kolom itu bernilai nol karena partainya tidak tercetak, "
+    "bukan karena tidak ada yang memilih. DKI Jakarta tidak menyelenggarakan "
+    "pemilihan DPRD Kabupaten/Kota — kota dan kabupaten administrasinya tidak "
+    "memiliki DPRD — dan pemilih luar negeri pun tidak memilih kontes ini, jadi "
+    "seluruh TPS di provinsi 31 dan 99 tercatat kosong secara sah, bukan karena "
+    "datanya hilang."
+)
 
 
 @dataclass(frozen=True)
@@ -110,10 +123,10 @@ class ContestSpec:
 
 
 # Aceh's six local parties hold ballot numbers 18–23.  By law they contest only
-# the DPRA and DPRK papers, so a DPRD Provinsi chart carries all twenty-four
-# options inside province 11 and just the eighteen national ones everywhere
-# else.  A zero in those columns outside Aceh therefore means "not on the
-# paper", which is why the note spells it out for the dashboard.
+# the DPRA and DPRK papers, so both DPRD charts carry all twenty-four options
+# inside province 11 and just the eighteen national ones everywhere else.  A
+# zero in those columns outside Aceh therefore means "not on the paper", which
+# is why the notes spell it out for the dashboard.
 ACEH_PROVINCE = "11"
 ACEH_LOCAL_OPTIONS = frozenset(str(number) for number in range(18, 24))
 
@@ -147,6 +160,15 @@ CONTESTS: tuple[ContestSpec, ...] = (
         note=DPRD_PROV_NOTE,
         local_options=ACEH_LOCAL_OPTIONS,
     ),
+    ContestSpec(
+        id="dprdkab",
+        label="DPRD Kabupaten/Kota",
+        source="data_dpr_kabkot",
+        options=tuple((str(number), f"partai-{number}") for number in range(1, 25)),
+        value_field="jml_suara_total",
+        note=DPRD_KAB_NOTE,
+        local_options=ACEH_LOCAL_OPTIONS,
+    ),
 )
 
 # Field names inside the Sirekap ``administrasi`` block, mapped to the same five
@@ -178,7 +200,7 @@ OUTPUT_STAT_COLUMNS = (
 # still be reported instead of silently dropped.
 PLACEHOLDER_CHART_KEY = "null"
 
-# The DPRD Provinsi scrape files the ballot's party dictionary beside the
+# The two DPRD scrapes file the ballot's party dictionary beside the
 # villages under this key.  It is exactly ten characters long, so without an
 # explicit skip ``split_code`` would happily slice it into a village of
 # "province PA, regency RT" and invent a region.  Every other non-village key

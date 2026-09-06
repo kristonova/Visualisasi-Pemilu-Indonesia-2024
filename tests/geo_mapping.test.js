@@ -134,7 +134,7 @@ assert.strictEqual(new Set(app.PASLON_2024.map(option => option.warna)).size, 3,
 
 /* ── dua dataset ─────────────────────────────────────────────────── */
 const y2019 = checkDataset('2019', app.CONTEST_ORDER, 'P');
-const y2024 = checkDataset('2024', ['pilpres', 'dpr', 'dprdprov'], '');
+const y2024 = checkDataset('2024', app.CONTEST_ORDER, '');
 
 assert.strictEqual(y2024.contests[0].opsi.length, 3, '2024: Pilpres memiliki tiga paslon');
 assert.strictEqual(y2019.contests[0].opsi.length, 2, '2019: Pilpres memiliki dua paslon');
@@ -155,16 +155,23 @@ assert.deepStrictEqual(dpr2024.opsi.map(option => option.column),
   'dpr 2024: setiap opsi harus terpetakan ke kolom partai-<nomor urut>');
 assert.ok(dpr2024.opsi.every(option => option.pendek && !/^Partai /.test(option.pendek)),
   'dpr 2024: seluruh kolom harus dikenali PARTY_SPEC_2024, bukan unknownOption()');
-// Surat suara DPRD Provinsi memakai seluruh 24 nomor: keenam partai lokal Aceh
-// tercetak pada surat suara DPRA, sehingga kolomnya ada di setiap provinsi dan
-// bernilai nol di luar Aceh — hal itu diuji pada test_2024_artifacts.py.
-const dprdprov2024 = y2024.contests.find(contest => contest.id === 'dprdprov');
-assert.ok(dprdprov2024, '2024: kontes DPRD Provinsi harus terbaca dari election2024.json');
-assert.deepStrictEqual(dprdprov2024.opsi.map(option => option.no),
-  Array.from({ length: 24 }, (_, index) => String(index + 1)),
-  'dprdprov 2024: urutan partai UI harus mengikuti nomor surat suara DPRD Provinsi');
-assert.ok(dprdprov2024.opsi.every(option => option.pendek && !/^Partai /.test(option.pendek)),
-  'dprdprov 2024: seluruh kolom harus dikenali PARTY_SPEC_2024, bukan unknownOption()');
+// Kedua surat suara DPRD memakai seluruh 24 nomor: keenam partai lokal Aceh
+// tercetak pada surat suara DPRA dan DPRK, sehingga kolomnya ada di setiap
+// provinsi dan bernilai nol di luar Aceh — hal itu diuji pada
+// test_2024_artifacts.py, berikut kekosongan sah DKI Jakarta dan luar negeri
+// pada kontes DPRD Kabupaten/Kota.
+for (const [contestId, label] of [['dprdprov', 'DPRD Provinsi'], ['dprdkab', 'DPRD Kabupaten/Kota']]) {
+  const contest = y2024.contests.find(item => item.id === contestId);
+  assert.ok(contest, `2024: kontes ${label} harus terbaca dari election2024.json`);
+  assert.deepStrictEqual(contest.opsi.map(option => option.no),
+    Array.from({ length: 24 }, (_, index) => String(index + 1)),
+    `${contestId} 2024: urutan partai UI harus mengikuti nomor surat suara ${label}`);
+  assert.deepStrictEqual(contest.opsi.map(option => option.column),
+    contest.opsi.map(option => `partai-${option.no}`),
+    `${contestId} 2024: setiap opsi harus terpetakan ke kolom partai-<nomor urut>`);
+  assert.ok(contest.opsi.every(option => option.pendek && !/^Partai /.test(option.pendek)),
+    `${contestId} 2024: seluruh kolom harus dikenali PARTY_SPEC_2024, bukan unknownOption()`);
+}
 // Kunci 2024 adalah kode Kemendagri apa adanya, karena itulah yang membuat
 // penggabungan dengan shapefile desa berjalan tanpa pencocokan nama.
 const sampleVillage = [...app.S.nodes.values()].find(node => node.lv === 4 && node.key.startsWith('11.'));

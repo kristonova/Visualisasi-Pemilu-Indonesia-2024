@@ -31,15 +31,21 @@ GIS = DATA / "gis2024"
 # Slot order inside every emitted row, mirroring ``CONTESTS`` in the builder.
 # DPR RI carries only the 18 national parties: numbers 18–23 are the Aceh local
 # parties, which by law contest the DPRA and DPRK ballots but never DPR RI.
-# DPRD Provinsi keeps all 24 columns because the DPRA paper does print the six
-# local parties; outside Aceh those columns are legitimately zero.
+# Both DPRD ballots keep all 24 columns because the DPRA and DPRK papers do
+# print the six local parties; outside Aceh those columns are legitimately zero.
 CONTESTS = [
     ("pilpres", ["paslon-1", "paslon-2", "paslon-3"]),
     ("dpr", [f"partai-{number}" for number in [*range(1, 18), 24]]),
     ("dprdprov", [f"partai-{number}" for number in range(1, 25)]),
+    ("dprdkab", [f"partai-{number}" for number in range(1, 25)]),
 ]
 ACEH_PROVINCE = "11"
 ACEH_LOCAL_COLUMNS = [f"partai-{number}" for number in range(18, 24)]
+LOCAL_PARTY_CONTESTS = ("dprdprov", "dprdkab")
+# DKI Jakarta's administrative cities and regency have no DPRD of their own and
+# overseas voters elect no local council, so neither province holds a DPRD
+# Kabupaten/Kota election at all: every TPS there is blank by law, not by loss.
+NO_DPRK_PROVINCES = ("31", "99")
 CONTEST_IDS = [contest_id for contest_id, _columns in CONTESTS]
 STATS = [
     "total-pemilih",
@@ -74,7 +80,7 @@ def flatten(raw: dict[str, Any]) -> tuple[dict[str, str], dict[str, str], dict[s
         "kunci 2024 harus tanpa awalan supaya sama dengan kode Kemendagri"
     )
     assert raw["contests"] == CONTEST_IDS, (
-        "2024 memuat Pilpres, DPR RI, dan DPRD Provinsi; DPRD Kab/Kota belum di-scrape"
+        "2024 memuat Pilpres, DPR RI, DPRD Provinsi, dan DPRD Kabupaten/Kota"
     )
     names: dict[str, str] = {}
     parents: dict[str, str] = {}
@@ -180,11 +186,16 @@ def check_election(names, parents, levels) -> dict[str, Any]:
     national_stats = {contest_id: [0] * len(STATS) for contest_id, _columns in CONTESTS}
     contest_villages = {contest_id: 0 for contest_id, _columns in CONTESTS}
     # The one column rule that varies by province: the six Aceh local parties
-    # are printed on the DPRA paper and nowhere else, so their columns must be
-    # zero outside province 11 and carry votes inside it.
-    dprdprov_columns = dict(CONTESTS)["dprdprov"]
-    local_indexes = [dprdprov_columns.index(column) for column in ACEH_LOCAL_COLUMNS]
-    local_votes = {"aceh": 0, "elsewhere": 0}
+    # are printed on the DPRA and DPRK papers and nowhere else, so their columns
+    # must be zero outside province 11 and carry votes inside it.
+    local_indexes = {
+        contest_id: [dict(CONTESTS)[contest_id].index(column) for column in ACEH_LOCAL_COLUMNS]
+        for contest_id in LOCAL_PARTY_CONTESTS
+    }
+    local_votes = {
+        contest_id: {"aceh": 0, "elsewhere": 0} for contest_id in LOCAL_PARTY_CONTESTS
+    }
+    no_dprk_votes = 0
     for province_key in sorted(province_keys):
         chunk = load(chunk_dir / f"{province_key}.json")
         assert chunk["schema"] == 2
@@ -221,9 +232,13 @@ def check_election(names, parents, levels) -> dict[str, Any]:
                 assert stats[5] >= stats[6], (
                     f"{village_key}/{contest_id}: TPS tervalidasi melebihi jumlah TPS"
                 )
-                if contest_id == "dprdprov":
+                if contest_id in LOCAL_PARTY_CONTESTS:
                     where = "aceh" if province_key == ACEH_PROVINCE else "elsewhere"
-                    local_votes[where] += sum(votes[index] for index in local_indexes)
+                    local_votes[contest_id][where] += sum(
+                        votes[index] for index in local_indexes[contest_id]
+                    )
+                if contest_id == "dprdkab" and province_key in NO_DPRK_PROVINCES:
+                    no_dprk_votes += sum(votes)
                 target = row[slot]
                 if target is None:
                     target = row[slot] = [[0] * len(columns), [0] * len(STATS)]
@@ -234,11 +249,18 @@ def check_election(names, parents, levels) -> dict[str, Any]:
                     target[1][index] += value
                     national_stats[contest_id][index] += value
     assert seen == village_keys, "chunk hasil dan hierarki memuat desa berbeda"
-    assert local_votes["elsewhere"] == 0, (
-        "partai lokal Aceh tidak tercetak di luar Aceh, jadi kolom 18–23 wajib nol"
-    )
-    assert local_votes["aceh"] > 0, (
-        "surat suara DPRA memuat partai lokal, jadi kolom 18–23 wajib berisi di Aceh"
+    for contest_id in LOCAL_PARTY_CONTESTS:
+        assert local_votes[contest_id]["elsewhere"] == 0, (
+            f"{contest_id}: partai lokal Aceh tidak tercetak di luar Aceh, "
+            "jadi kolom 18–23 wajib nol"
+        )
+        assert local_votes[contest_id]["aceh"] > 0, (
+            f"{contest_id}: surat suara Aceh memuat partai lokal, "
+            "jadi kolom 18–23 wajib berisi di Aceh"
+        )
+    assert no_dprk_votes == 0, (
+        "DKI Jakarta dan luar negeri tidak memilih DPRD Kabupaten/Kota, "
+        "jadi provinsi 31 dan 99 wajib nol pada kontes ini"
     )
 
     assert set(election["kec"]) == district_keys, "roll-up kecamatan tidak sepadan hierarki"
