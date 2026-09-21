@@ -33,9 +33,14 @@ GIS = DATA / "gis2024"
 # parties, which by law contest the DPRA and DPRK ballots but never DPR RI.
 # Both DPRD ballots keep all 24 columns because the DPRA and DPRK papers do
 # print the six local parties; outside Aceh those columns are legitimately zero.
+# DPD columns are ballot positions: every province prints its own candidate
+# list, up to Jawa Barat's 54, so the columns only mean something together with
+# that province's roster.
+DPD_MAX_CANDIDATES = 54
 CONTESTS = [
     ("pilpres", ["paslon-1", "paslon-2", "paslon-3"]),
     ("dpr", [f"partai-{number}" for number in [*range(1, 18), 24]]),
+    ("dpd", [f"calon-{number}" for number in range(1, DPD_MAX_CANDIDATES + 1)]),
     ("dprdprov", [f"partai-{number}" for number in range(1, 25)]),
     ("dprdkab", [f"partai-{number}" for number in range(1, 25)]),
 ]
@@ -46,6 +51,7 @@ LOCAL_PARTY_CONTESTS = ("dprdprov", "dprdkab")
 # overseas voters elect no local council, so neither province holds a DPRD
 # Kabupaten/Kota election at all: every TPS there is blank by law, not by loss.
 NO_DPRK_PROVINCES = ("31", "99")
+DPD_SLOT = [contest_id for contest_id, _columns in CONTESTS].index("dpd")
 CONTEST_IDS = [contest_id for contest_id, _columns in CONTESTS]
 STATS = [
     "total-pemilih",
@@ -80,7 +86,7 @@ def flatten(raw: dict[str, Any]) -> tuple[dict[str, str], dict[str, str], dict[s
         "kunci 2024 harus tanpa awalan supaya sama dengan kode Kemendagri"
     )
     assert raw["contests"] == CONTEST_IDS, (
-        "2024 memuat Pilpres, DPR RI, DPRD Provinsi, dan DPRD Kabupaten/Kota"
+        "2024 memuat Pilpres, DPR RI, DPD, DPRD Provinsi, dan DPRD Kabupaten/Kota"
     )
     names: dict[str, str] = {}
     parents: dict[str, str] = {}
@@ -196,6 +202,26 @@ def check_election(names, parents, levels) -> dict[str, Any]:
         contest_id: {"aceh": 0, "elsewhere": 0} for contest_id in LOCAL_PARTY_CONTESTS
     }
     no_dprk_votes = 0
+    # Overseas voters receive only the Presiden and DPR RI papers, so province
+    # 99 carries no DPD roster; every domestic province carries exactly one.
+    rosters = election["contests"][DPD_SLOT]["rosters"]
+    domestic_provinces = province_keys - {OVERSEAS_PROVINCE}
+    assert set(rosters) == domestic_provinces, (
+        f"roster DPD harus ada untuk tiap provinsi dalam negeri; "
+        f"hilang={sorted(domestic_provinces - set(rosters))}, asing={sorted(set(rosters) - domestic_provinces)}"
+    )
+    roster_sizes: dict[str, int] = {}
+    for province_key, roster in rosters.items():
+        numbers = [row["no"] for row in roster]
+        assert numbers == list(range(1, len(roster) + 1)), (
+            f"{province_key}: nomor urut DPD harus 1..N berurutan"
+        )
+        assert 1 <= len(roster) <= DPD_MAX_CANDIDATES, f"{province_key}: jumlah calon DPD di luar batas"
+        assert all(row["nama"].strip() for row in roster), f"{province_key}: nama calon DPD kosong"
+        roster_sizes[province_key] = len(roster)
+    assert max(roster_sizes.values()) == DPD_MAX_CANDIDATES, "Jawa Barat memuat 54 calon DPD"
+    dpd_province_votes: dict[str, list[int]] = {}
+    unprinted_dpd_votes = 0
     for province_key in sorted(province_keys):
         chunk = load(chunk_dir / f"{province_key}.json")
         assert chunk["schema"] == 2
@@ -239,6 +265,12 @@ def check_election(names, parents, levels) -> dict[str, Any]:
                     )
                 if contest_id == "dprdkab" and province_key in NO_DPRK_PROVINCES:
                     no_dprk_votes += sum(votes)
+                if contest_id == "dpd":
+                    # A position past the province's roster was never printed.
+                    unprinted_dpd_votes += sum(votes[roster_sizes.get(province_key, 0):])
+                    province_row = dpd_province_votes.setdefault(province_key, [0] * len(columns))
+                    for index, value in enumerate(votes):
+                        province_row[index] += value
                 target = row[slot]
                 if target is None:
                     target = row[slot] = [[0] * len(columns), [0] * len(STATS)]
@@ -262,6 +294,25 @@ def check_election(names, parents, levels) -> dict[str, Any]:
         "DKI Jakarta dan luar negeri tidak memilih DPRD Kabupaten/Kota, "
         "jadi provinsi 31 dan 99 wajib nol pada kontes ini"
     )
+    assert unprinted_dpd_votes == 0, (
+        "kolom DPD di atas jumlah calon provinsinya tidak tercetak, jadi wajib nol "
+        "(termasuk seluruh kolom luar negeri, yang tidak memilih DPD)"
+    )
+    dpd_audit = audit["contests"]["dpd"]
+    assert set(dpd_audit["rosters"]) == set(rosters), "roster DPD audit dan election2024.json berbeda"
+    for province_key, roster in rosters.items():
+        audit_roster = dpd_audit["rosters"][province_key]
+        assert [(row["no"], row["nama"]) for row in audit_roster] == [
+            (row["no"], row["nama"]) for row in roster
+        ], f"{province_key}: roster DPD audit tidak sepadan election2024.json"
+        assert all(row["id"] for row in audit_roster), f"{province_key}: id calon KPU hilang dari audit"
+        expected_totals = {
+            f"calon-{row['no']}": dpd_province_votes.get(province_key, [0] * DPD_MAX_CANDIDATES)[row["no"] - 1]
+            for row in roster
+        }
+        assert dpd_audit["candidate_totals"][province_key] == expected_totals, (
+            f"{province_key}: total calon DPD pada audit bukan jumlah chunk desanya"
+        )
 
     assert set(election["kec"]) == district_keys, "roll-up kecamatan tidak sepadan hierarki"
     assert set(district_totals) == district_keys, "ada kecamatan tanpa desa"

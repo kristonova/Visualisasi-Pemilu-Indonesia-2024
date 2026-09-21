@@ -5,6 +5,9 @@ https://github.com/… scrapping-pemilu-2024, one directory per ballot:
 
 * ``data_pilpres/<prov>/<kab>.json``  presidential ballot (three tickets)
 * ``data_dpr_ri/<prov>/<kab>.json``   DPR RI ballot (eighteen national parties)
+* ``data_dpd/<prov>/<kab>.json``      DPD ballot (individual candidates, a
+  different list in every province, filed beside the villages as
+  ``dpd_candidates``)
 * ``data_dpr_prov/<prov>/<kab>.json`` DPRD Provinsi ballot (the same eighteen
   everywhere, plus Aceh's six local parties on the DPRA paper)
 * ``data_dpr_kabkot/<prov>/<kab>.json`` DPRD Kabupaten/Kota ballot (the same
@@ -16,7 +19,7 @@ without any name matching.  That is the whole reason the 2024 tree does not
 reuse the opaque KPU 2019 tokens: the 2019 hierarchy carries no Kemendagri code
 at all.
 
-All four ballots are scanned in the same run because they share one hierarchy
+All five ballots are scanned in the same run because they share one hierarchy
 and one set of node keys; every emitted row carries one slot per contest, in the
 order of ``CONTESTS``, exactly like the 2019 artifacts.  A contest with no data
 for an area gets ``null`` in its slot rather than a row of zeroes, so "nobody
@@ -49,7 +52,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 PROJECT_DIR = Path(__file__).resolve().parent
-DEFAULT_SOURCE = Path(r"D:\PROJECT\scrapping-pemilu-2024")
+DEFAULT_SOURCE = Path(r"D:\PROJECT\Project Pribadi\scrapping-pemilu-2024")
 DEFAULT_OUTPUT = PROJECT_DIR / "data"
 DEFAULT_SHP = (
     PROJECT_DIR
@@ -71,6 +74,16 @@ DPR_NOTE = (
     + " Surat suara DPR RI hanya memuat 18 partai nasional (nomor urut 1–17 "
     "dan 24); partai lokal Aceh bernomor 18–23 tidak ikut kontes ini sehingga "
     "kolomnya memang tidak ada, bukan hilang."
+)
+DPD_NOTE = (
+    COVERAGE_NOTE
+    + " DPD dipilih per provinsi: setiap provinsi adalah satu daerah pemilihan "
+    "dengan empat kursi dan daftar calonnya sendiri, sehingga kolom "
+    "calon-<nomor urut> hanya bermakna bersama daftar calon provinsi yang "
+    "bersangkutan dan tidak dapat dijumlahkan lintas provinsi. Kolom di atas "
+    "jumlah calon suatu provinsi bernilai nol karena nomor itu tidak tercetak "
+    "pada surat suaranya. Pemilih luar negeri hanya menerima surat suara Presiden "
+    "dan DPR RI, jadi seluruh TPS PPLN tercatat kosong secara sah pada kontes ini."
 )
 DPRD_PROV_NOTE = (
     COVERAGE_NOTE
@@ -116,6 +129,11 @@ class ContestSpec:
     # get a column everywhere, because the browser reads one fixed column list
     # per contest, but the completeness checks must not expect them elsewhere.
     local_options: frozenset[str] = frozenset()
+    # Key of the per-file candidate roster, for a ballot whose options differ by
+    # province (DPD).  Its chart is keyed by KPU candidate id, so ``options``
+    # then pairs a ballot number with its column and each file's roster says
+    # which candidate holds which number.
+    roster_key: str | None = None
 
     @property
     def columns(self) -> tuple[str, ...]:
@@ -130,10 +148,17 @@ class ContestSpec:
 ACEH_PROVINCE = "11"
 ACEH_LOCAL_OPTIONS = frozenset(str(number) for number in range(18, 24))
 
+# Jawa Barat fields the longest DPD list, 54 candidates.  The DPD columns are
+# ballot positions, so every province shares ``calon-1`` … ``calon-54`` and a
+# shorter list simply never prints the higher numbers.  A roster numbering
+# past this bound is reported rather than silently widened.
+DPD_MAX_CANDIDATES = 54
+
 # KPU option ids for the three 2024 presidential tickets, in ballot order, then
 # the 2024 DPR RI ballot: national parties 1–17 plus Ummat at 24.  Numbers
 # 18–23 belong to the Aceh local parties, which by law contest only the DPRA
-# and DPRK ballots, so they never appear in a DPR RI chart.
+# and DPRK ballots, so they never appear in a DPR RI chart.  The contests
+# follow the order of the five papers handed to a voter.
 CONTESTS: tuple[ContestSpec, ...] = (
     ContestSpec(
         id="pilpres",
@@ -150,6 +175,17 @@ CONTESTS: tuple[ContestSpec, ...] = (
         options=tuple((str(number), f"partai-{number}") for number in (*range(1, 18), 24)),
         value_field="jml_suara_total",
         note=DPR_NOTE,
+    ),
+    ContestSpec(
+        id="dpd",
+        label="DPD",
+        source="data_dpd",
+        options=tuple(
+            (str(number), f"calon-{number}") for number in range(1, DPD_MAX_CANDIDATES + 1)
+        ),
+        value_field=None,
+        note=DPD_NOTE,
+        roster_key="dpd_candidates",
     ),
     ContestSpec(
         id="dprdprov",
@@ -203,8 +239,9 @@ PLACEHOLDER_CHART_KEY = "null"
 # The two DPRD scrapes file the ballot's party dictionary beside the
 # villages under this key.  It is exactly ten characters long, so without an
 # explicit skip ``split_code`` would happily slice it into a village of
-# "province PA, regency RT" and invent a region.  Every other non-village key
-# still reports as malformed rather than being ignored.
+# "province PA, regency RT" and invent a region.  The DPD roster sits beside
+# the villages the same way and is skipped by its ``roster_key``.  Every other
+# non-village key still reports as malformed rather than being ignored.
 PARTY_MAP_KEY = "partai_map"
 
 # Papua's noken aggregation and the overseas POS/KSK ballots legitimately exceed
@@ -352,6 +389,9 @@ class Scan:
         self.rows = 0
         self.rejected = 0
         self.tps_codes_seen: set[str] = set()
+        # Province code → the ballot's candidates in number order; only filled
+        # for a roster ballot (DPD).
+        self.rosters: dict[str, list[dict[str, Any]]] = {}
 
     def add_example(self, kind: str, path: Path, payload: Any) -> None:
         if len(self.examples) >= 30:
@@ -361,10 +401,67 @@ class Scan:
         )
 
 
+def chart_keys(
+    payload: dict[str, Any], spec: ContestSpec, scan: Scan, path: Path, province: str
+) -> list[str | None]:
+    """The ``chart`` key behind each of ``spec.options`` in one regency file.
+
+    A fixed ballot maps straight through.  A roster ballot (DPD) keys its chart
+    by KPU candidate id, so the file's own roster decides which candidate holds
+    each ballot number; a number nobody holds in this province maps to ``None``
+    and reads as a column that was never printed, not as a missing value."""
+
+    if spec.roster_key is None:
+        return [option_id for option_id, _column in spec.options]
+    keys: list[str | None] = [None] * len(spec.options)
+    raw = payload.get(spec.roster_key)
+    if not isinstance(raw, dict):
+        scan.anomalies["roster_missing"] += 1
+        scan.add_example("roster_missing", path, type(raw).__name__)
+        return keys
+    position = {option_id: index for index, (option_id, _column) in enumerate(spec.options)}
+    roster: list[dict[str, Any]] = []
+    for candidate_id, candidate in raw.items():
+        number = candidate.get("nomor_urut") if isinstance(candidate, dict) else None
+        index = None if isinstance(number, bool) else position.get(str(number))
+        if index is None:
+            scan.anomalies["roster_number_out_of_range"] += 1
+            scan.add_example("roster_number_out_of_range", path, {candidate_id: candidate})
+            continue
+        if keys[index] is not None:
+            scan.anomalies["roster_number_duplicate"] += 1
+            scan.add_example("roster_number_duplicate", path, {candidate_id: candidate})
+            continue
+        keys[index] = str(candidate_id)
+        roster.append(
+            {
+                "no": index + 1,
+                "id": str(candidate_id),
+                "nama": clean_name(candidate.get("nama")),
+                "jk": clean_name(candidate.get("jenis_kelamin")),
+                "domisili": clean_name(candidate.get("tempat_tinggal")),
+            }
+        )
+    roster.sort(key=lambda row: row["no"])
+    # Overseas voters receive only the Presiden and DPR RI papers, so the
+    # overseas files legitimately carry an empty DPD roster.
+    if not roster:
+        if province != OVERSEAS_PROVINCE:
+            scan.anomalies["roster_missing"] += 1
+            scan.add_example("roster_missing", path, raw)
+        return keys
+    known = scan.rosters.setdefault(province, roster)
+    if known != roster:
+        # Every regency of a province prints the same DPD paper; a different
+        # list would put another candidate's votes under the same column.
+        scan.anomalies["roster_province_mismatch"] += 1
+        scan.add_example("roster_province_mismatch", path, [row["id"] for row in roster])
+    return keys
+
+
 def scan_source(contest_dir: Path, spec: ContestSpec, max_files: int = 0) -> Scan:
     scan = Scan(spec)
-    known_options = {option_id for option_id, _column in spec.options}
-    national_options = known_options - spec.local_options
+    skipped_keys = {PARTY_MAP_KEY} | ({spec.roster_key} if spec.roster_key else set())
     files = sorted(
         path for path in contest_dir.rglob("*.json") if path.parent != contest_dir
     )
@@ -383,6 +480,9 @@ def scan_source(contest_dir: Path, spec: ContestSpec, max_files: int = 0) -> Sca
             scan.anomalies["file_not_object"] += 1
             scan.add_example("file_not_object", path, type(payload).__name__)
             continue
+        option_keys = chart_keys(payload, spec, scan, path, province_folder)
+        known_options = {key for key in option_keys if key is not None}
+        national_options = known_options - spec.local_options
         party_map = payload.get(PARTY_MAP_KEY)
         if isinstance(party_map, dict) and set(party_map) != known_options:
             # The ballot changed shape under us: report it instead of quietly
@@ -390,7 +490,7 @@ def scan_source(contest_dir: Path, spec: ContestSpec, max_files: int = 0) -> Sca
             scan.anomalies["party_map_mismatch"] += 1
             scan.add_example("party_map_mismatch", path, sorted(party_map))
         for village_code, village in payload.items():
-            if village_code == PARTY_MAP_KEY:
+            if village_code in skipped_keys:
                 continue
             segments = split_code(village_code)
             if segments is None:
@@ -409,8 +509,9 @@ def scan_source(contest_dir: Path, spec: ContestSpec, max_files: int = 0) -> Sca
             stats = scan.village_stats.setdefault(village_code, [0] * len(OUTPUT_STAT_COLUMNS))
 
             large_allowed = segments[0] in LARGE_TPS_PROVINCES
-            # Which options this village's paper actually carried; only the
-            # DPRD Provinsi ballot differs between provinces.
+            # Which options this village's paper actually carried: the DPRD
+            # papers add Aceh's local parties inside province 11, and a DPD
+            # paper is simply its own province's roster.
             ballot_options = (
                 known_options if segments[0] == ACEH_PROVINCE else national_options
             )
@@ -446,8 +547,12 @@ def scan_source(contest_dir: Path, spec: ContestSpec, max_files: int = 0) -> Sca
                 chart = detail.get("chart")
                 raw_votes: list[int] = []
                 votes_present = False
-                for option_id, _column in spec.options:
-                    value, missing = chart_value(chart, option_id, spec)
+                for option_key in option_keys:
+                    value, missing = (
+                        chart_value(chart, option_key, spec)
+                        if option_key is not None
+                        else (0, True)
+                    )
                     if not missing:
                         votes_present = True
                     if value < 0:
@@ -651,6 +756,47 @@ def merge_village_names(scans: list[Scan]) -> dict[str, str]:
     return names
 
 
+def contest_entry(spec: ContestSpec, scan: Scan) -> dict[str, Any]:
+    """One contest as ``election2024.json`` lists it.
+
+    A roster ballot also ships each province's candidates, because its columns
+    are ballot positions whose names change from province to province.  The
+    browser needs names, not KPU ids; the ids stay in the audit."""
+
+    entry: dict[str, Any] = {"id": spec.id, "vote_columns": list(spec.columns)}
+    if spec.roster_key is not None:
+        entry["rosters"] = {
+            province: [
+                {field: row[field] for field in ("no", "nama", "jk", "domisili")}
+                for row in roster
+            ]
+            for province, roster in sorted(scan.rosters.items())
+        }
+    return entry
+
+
+def candidate_totals(scan: Scan) -> dict[str, dict[str, int]]:
+    """Each province's votes per candidate of a roster ballot.
+
+    Summing a candidate column across provinces adds up different people, so
+    this per-province table is the only national view that sums like with
+    like."""
+
+    sums: dict[str, list[int]] = {}
+    for code, votes in scan.village_votes.items():
+        row = sums.setdefault(code[:2], [0] * len(votes))
+        for index, value in enumerate(votes):
+            row[index] += value
+    empty = [0] * len(scan.spec.columns)
+    return {
+        province: {
+            scan.spec.columns[row["no"] - 1]: sums.get(province, empty)[row["no"] - 1]
+            for row in roster
+        }
+        for province, roster in sorted(scan.rosters.items())
+    }
+
+
 def build(
     source_root: Path,
     output_dir: Path,
@@ -751,6 +897,9 @@ def build(
             "files": scan.files,
             "note": spec.note,
         }
+        if spec.roster_key is not None:
+            contest_audits[spec.id]["rosters"] = dict(sorted(scan.rosters.items()))
+            contest_audits[spec.id]["candidate_totals"] = candidate_totals(scan)
         source_summary[spec.id] = {
             "files": len(scan.files),
             "rows": scan.rows,
@@ -773,9 +922,7 @@ def build(
 
     election = {
         "schema": SCHEMA,
-        "contests": [
-            {"id": spec.id, "vote_columns": list(spec.columns)} for spec in specs
-        ],
+        "contests": [contest_entry(spec, scan) for spec, scan in zip(specs, scans)],
         "stats": list(OUTPUT_STAT_COLUMNS),
         "kec": dict(sorted(district_totals.items())),
         "source_summary": source_summary,

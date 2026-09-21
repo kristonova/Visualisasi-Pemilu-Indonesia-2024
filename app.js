@@ -119,11 +119,31 @@ const PARTY_SPEC_2024 = [
   warna: index < 17 ? OKL(.585, .175, hue) : OKL(.665, .105, hue)
 }));
 
+/* DPD 2024: setiap provinsi adalah satu daerah pemilihan berkursi empat dengan
+   daftar calonnya sendiri, jadi kolom `calon-<nomor urut>` baru bermakna
+   bersama roster provinsi yang dikirim builder di election2024.json. Warna
+   calon diberikan per provinsi menurut peringkat perolehan tingkat provinsi:
+   empat besar (kursi indikatif) memakai hue tegas, peringkat 5–10 hue lembut,
+   dan sisanya satu warna "calon lain" karena 54 hue tidak mungkin dibedakan. */
+const DPD_SEATS = 4;
+const CANDIDATE_COLORS = [
+  ...[25, 245, 150, 305].map(hue => OKL(.585, .175, hue)),
+  ...[75, 195, 350, 110, 275, 45].map(hue => OKL(.72, .11, hue))
+];
+// Abu kebiruan: cukup gelap dan dingin agar tidak tertukar dengan abu hangat
+// NO_DATA maupun TIE_COLOR.
+const OTHER_CANDIDATE = OKL(.72, .04, 240);
+// Tingkat nasional DPD tidak punya pemenang: provinsi diwarnai satu hue
+// menurut porsi (atau selisih) calon teratasnya sendiri.
+const TOP_SHARE_COLOR = OKL(.42, .13, 280);
+
 const partyIndex = spec => new Map(spec.map(party => [columnKey(party.column), party]));
-const CONTEST_ORDER = ['pilpres', 'dpr', 'dprdprov', 'dprdkab'];
+// Urutan tab mengikuti lima surat suara yang diterima pemilih.
+const CONTEST_ORDER = ['pilpres', 'dpr', 'dpd', 'dprdprov', 'dprdkab'];
 const CONTEST_NAMES = {
   pilpres: ['Pemilu Presiden', 'Presiden'],
   dpr: ['Pemilihan Legislatif', 'DPR RI'],
+  dpd: ['Pemilihan Legislatif', 'DPD RI'],
   dprdprov: ['Pemilihan Legislatif', 'DPRD Provinsi'],
   dprdkab: ['Pemilihan Legislatif', 'DPRD Kab/Kota']
 };
@@ -153,7 +173,8 @@ const DATASETS = [
     gisDir: 'data/gis',
     paslon: PASLON_2019,
     parties: PARTY_SPEC,
-    contests: CONTEST_ORDER,
+    // Sumber 2019 tidak memuat hasil DPD sama sekali.
+    contests: CONTEST_ORDER.filter(id => id !== 'dpd'),
     geoNote: 'batas diselaraskan ke hierarki 2019',
     sourceNote: 'CSV KPU 2019'
   }
@@ -218,15 +239,77 @@ function unknownOption(column, index) {
   return { column, no: String(index + 1), pendek: label, nama: label, warna: OKL(.62, .12, (index * 67) % 360) };
 }
 
+/* Label ringkas calon DPD untuk legenda, tab, dan tabel: gelar di belakang
+   koma dan sapaan/gelar di depan dibuang, lalu huruf kapital sumber dijadikan
+   huruf judul. Nama lengkap tetap dipakai di blok pemenang dan ekspor. */
+const NAME_PREFIX = /^(?:(?:prof|drs|dra|drh|drg|dr|ir|hj|h|k\.\s?h|kh|tgh|tgk|ust|pdt|apt)\.\s*)+/i;
+function candidateShortName(name) {
+  const full = String(name || '').trim();
+  const base = full.split(',')[0].replace(NAME_PREFIX, '').trim() || full;
+  return base.toLowerCase().replace(/(^|[\s.-])(\p{L})/gu, (_, lead, letter) => lead + letter.toUpperCase());
+}
+
+function candidateContest(source, dataset) {
+  const voteColumns = Array.isArray(source.vote_columns) ? source.vote_columns.slice() : [];
+  // Opsi posisi tanpa roster tidak pernah ditampilkan: di tingkat nasional
+  // "calon nomor 3" berarti 38 orang berbeda.
+  const positional = voteColumns.map((column, index) => ({
+    column, no: String(index + 1), pendek: `Calon ${index + 1}`, nama: `Calon nomor urut ${index + 1}`,
+    index, warna: OTHER_CANDIDATE, absent: true
+  }));
+  const rosters = new Map();
+  for (const [province, rows] of Object.entries(source.rosters || {})) {
+    const byColumn = new Map((Array.isArray(rows) ? rows : []).map(row => [`calon-${row.no}`, row]));
+    rosters.set(String(province), voteColumns.map((column, index) => {
+      const row = byColumn.get(column);
+      if (!row) return { ...positional[index] };
+      const nama = String(row.nama || '').trim() || `Calon nomor urut ${row.no}`;
+      return {
+        column, no: String(row.no), pendek: candidateShortName(nama), nama,
+        jk: row.jk || '', domisili: row.domisili || '', index,
+        warna: OTHER_CANDIDATE, rank: null, seat: false
+      };
+    }));
+  }
+  const [kicker, nama] = CONTEST_NAMES.dpd;
+  return {
+    id: 'dpd', kicker: `${kicker} ${dataset.id}`, nama: `${nama} ${dataset.id}`,
+    opsi: positional, rosters, jenis: 'calon',
+    sourceIndex: source.sourceIndex,
+    sourceIndexes: voteColumns.map((_, index) => index),
+    voteColumns
+  };
+}
+
+/* Peringkat dan warna calon ditetapkan sekali dari total tingkat provinsi,
+   sehingga seorang calon memakai warna yang sama dari provinsi hingga desa. */
+function rankCandidates(E, map) {
+  for (const P of S.root.anak) {
+    const O = E.rosters.get(P.code);
+    if (!O) continue;
+    const result = map.get(P.key);
+    const votes = result && result.present ? result.votes : [];
+    shownIndexes(O)
+      .sort((a, b) => number(votes[b]) - number(votes[a]) || a - b)
+      .forEach((index, position) => {
+        const option = O[index], hasVotes = number(votes[index]) > 0;
+        option.rank = hasVotes ? position + 1 : null;
+        option.seat = hasVotes && position < DPD_SEATS;
+        option.warna = hasVotes && position < CANDIDATE_COLORS.length ? CANDIDATE_COLORS[position] : OTHER_CANDIDATE;
+      });
+  }
+}
+
 function normalizeContests(rawContests, dataset = DATASETS[DATASETS.length - 1]) {
   const paslonSpec = dataset.paslon || PASLON_2019;
   const partySpec = dataset.parties || PARTY_SPEC;
   const partyByColumn = partyIndex(partySpec);
   const rows = Array.isArray(rawContests) ? rawContests : [];
   const byId = new Map(rows.map((contest, sourceIndex) => [contest.id, { ...contest, sourceIndex }]));
-  return CONTEST_ORDER.map(id => {
+  return (dataset.contests || CONTEST_ORDER).map(id => {
     const source = byId.get(id);
     if (!source) return null;
+    if (id === 'dpd') return candidateContest(source, dataset);
     let columns = Array.isArray(source.vote_columns) ? source.vote_columns.slice() : [];
     let ordered;
     if (id === 'pilpres') {
@@ -359,6 +442,7 @@ function installElectionData(data, dataset = DATASETS[DATASETS.length - 1]) {
       return result;
     };
     roll(S.root);
+    if (E.jenis === 'calon') rankCandidates(E, map);
   }
   S.pemilu = PEMILU[0] ? PEMILU[0].id : null;
 }
@@ -409,7 +493,30 @@ async function loadLeafResults(P) {
 
 /* ── warna dan skala ─────────────────────────────────────────────── */
 function election() { return S.contestsById.get(S.pemilu); }
-function opsi() { const E = election(); return E ? E.opsi : []; }
+/* Opsi yang berlaku untuk sebuah wilayah. Kontes partai dan paslon memakai satu
+   daftar nasional; DPD memakai roster provinsi wilayah itu, sedangkan tingkat
+   nasional dan provinsi tanpa surat suara DPD (luar negeri) hanya punya opsi
+   posisi yang seluruhnya `absent`. */
+function opsiFor(node, E = election()) {
+  if (!E) return [];
+  if (E.jenis !== 'calon') return E.opsi;
+  const P = provinceOf(node);
+  return (P && E.rosters.get(P.code)) || E.opsi;
+}
+function opsi() { return opsiFor(S.sel); }
+function shownIndexes(O) {
+  return O.map((option, index) => option.absent ? -1 : index).filter(index => index >= 0);
+}
+/* Tingkat nasional DPD: 38 provinsi, 38 daftar calon, tanpa pemenang nasional. */
+function topShareView() {
+  const E = election();
+  return !!(E && E.jenis === 'calon' && S.sel && S.sel.lv === 0);
+}
+function topShareOf(node) {
+  const total = sahOf(node);
+  return total > 0 ? Math.max(...votesOf(node)) / total : null;
+}
+function topShareValue(node) { return S.mode === 'margin' ? marginOf(node) : topShareOf(node); }
 function leadersOf(node) {
   const result = resultOf(node), votes = result ? result.votes : [];
   const total = result && result.present ? votes.reduce((a, b) => a + b, 0) : 0;
@@ -444,14 +551,15 @@ function updateScale() {
     ? [d3.quantile(turnouts.slice().sort(d3.ascending), .02), d3.quantile(turnouts.slice().sort(d3.ascending), .98)]
     : [.55, .9];
   if (S.tDom[1] - S.tDom[0] < .02) S.tDom = [Math.max(0, S.tDom[0] - .01), S.tDom[1] + .01];
+  const national = topShareView();
   const shares = units.map(node => {
     const total = sahOf(node), votes = votesOf(node);
-    return total > 0 ? votes[S.fokus] / total : null;
+    if (!(total > 0)) return null;
+    return national ? topShareValue(node) : votes[S.fokus] / total;
   }).filter(value => value != null);
   S.sDom = [0, Math.max(.08, d3.max(shares) || .5)];
 }
 function colorOf(node) {
-  const O = opsi();
   if (S.mode === 'turnout') {
     const turnout = turnoutOf(node);
     if (turnout == null) return NO_DATA;
@@ -460,6 +568,11 @@ function colorOf(node) {
   }
   const total = sahOf(node);
   if (!(total > 0)) return NO_DATA;
+  if (topShareView()) {
+    const max = (S.sDom || [0, .75])[1];
+    return d3.interpolateRgb(BGT, TOP_SHARE_COLOR)(Math.min(1, number(topShareValue(node)) / max));
+  }
+  const O = opsiFor(node);
   if (S.mode === 'share') {
     const max = (S.sDom || [0, .75])[1];
     return d3.interpolateRgb(BGT, O[S.fokus].warna)(Math.min(1, (votesOf(node)[S.fokus] / total) / max));
@@ -483,11 +596,11 @@ function renderYears() {
   });
   const brand = $('#brandyear');
   if (brand) brand.textContent = S.tahun || '';
-  const missing = PEMILU.length < CONTEST_ORDER.length
-    ? ` · ${CONTEST_ORDER.length - PEMILU.length} kontes legislatif belum tersedia`
-    : '';
+  const missing = CONTEST_ORDER.filter(id => !S.contestsById.has(id)).map(id => CONTEST_NAMES[id][1]);
   const kicker = $('#yearnote');
-  if (kicker) kicker.textContent = `${PEMILU.length} kontes${missing}`;
+  if (kicker) {
+    kicker.textContent = `${PEMILU.length} kontes${missing.length ? ` · ${missing.join(', ')} tidak tersedia` : ''}`;
+  }
 }
 function renderTabs() {
   $('#tabs').innerHTML = PEMILU.map(E =>
@@ -513,12 +626,16 @@ function renderModes() {
   $('#modeseg').querySelectorAll('input').forEach(input => {
     input.onchange = () => { S.mode = input.value; renderModes(); renderAll(); };
   });
-  const isShare = S.mode === 'share';
+  // Roster DPD berganti antarprovinsi, jadi fokus yang tidak tercetak di
+  // provinsi aktif pindah ke calon pertama yang ada.
+  const O = opsi(), shown = shownIndexes(O);
+  if (shown.length && !shown.includes(S.fokus)) S.fokus = shown[0];
+  const isShare = S.mode === 'share' && !topShareView() && shown.length > 0;
   $('#focussel').hidden = !isShare;
   $('#focuslab').hidden = !isShare;
   if (isShare) {
-    $('#focussel').innerHTML = opsi().map((option, index) =>
-      `<option value="${index}" ${index === S.fokus ? 'selected' : ''}>${esc(option.no)}. ${esc(option.pendek)}</option>`).join('');
+    $('#focussel').innerHTML = shown.map(index =>
+      `<option value="${index}" ${index === S.fokus ? 'selected' : ''}>${esc(O[index].no)}. ${esc(O[index].pendek)}</option>`).join('');
     $('#focussel').onchange = event => { S.fokus = +event.target.value; renderAll(); };
   }
 }
@@ -531,17 +648,39 @@ function renderLegend() {
       <span class="lgi"><i class="sw" style="background:${NO_DATA}"></i>Tanpa metadata valid</span>`;
     return;
   }
+  const noData = `<span class="lgi"><i class="sw" style="background:${NO_DATA}"></i>Tanpa perolehan</span>`;
+  if (topShareView()) {
+    const max = (S.sDom || [0, .75])[1];
+    const label = S.mode === 'margin'
+      ? 'Selisih calon teratas atas peringkat kedua di provinsinya'
+      : 'Porsi suara calon teratas di provinsinya';
+    legend.innerHTML = `<span class="modelab">${label}</span><span>0%</span>
+      <span class="ramp">${d3.range(9).map(i => `<i style="background:${d3.interpolateRgb(BGT, TOP_SHARE_COLOR)(i / 8)}"></i>`).join('')}</span><span>${pct(max, 0)}</span>${noData}`;
+    return;
+  }
+  const shown = shownIndexes(O);
+  if (!shown.length) {
+    legend.innerHTML = `<span class="modelab">Surat suara ${esc(election().nama)} tidak dibagikan di wilayah ini</span>${noData}`;
+    return;
+  }
   if (S.mode === 'share') {
     const option = O[S.fokus], max = (S.sDom || [0, .75])[1];
     legend.innerHTML = `<span class="modelab">Perolehan ${esc(option.pendek)}</span><span>0%</span>
-      <span class="ramp">${d3.range(9).map(i => `<i style="background:${d3.interpolateRgb(BGT, option.warna)(i / 8)}"></i>`).join('')}</span><span>${pct(max, 0)}</span>
-      <span class="lgi"><i class="sw" style="background:${NO_DATA}"></i>Tanpa perolehan</span>`;
+      <span class="ramp">${d3.range(9).map(i => `<i style="background:${d3.interpolateRgb(BGT, option.warna)(i / 8)}"></i>`).join('')}</span><span>${pct(max, 0)}</span>${noData}`;
     return;
   }
+  // Legenda DPD hanya memuat calon yang unggul di wilayah yang tampak; 54
+  // calon Jawa Barat tidak muat, dan calon yang tidak unggul tidak berwarna.
+  let listed = shown, others = false;
+  if (election().jenis === 'calon') {
+    const leaders = new Set(activeUnits().map(winnerOf).filter(index => index != null));
+    listed = shown.filter(index => leaders.has(index) && O[index].warna !== OTHER_CANDIDATE);
+    others = [...leaders].some(index => O[index].warna === OTHER_CANDIDATE);
+  }
   legend.innerHTML = `<span class="modelab">${S.mode === 'winner' ? 'Pemenang' : 'Pemenang · intensitas = margin'}</span>` +
-    O.map(option => `<span class="lgi"><i class="sw" style="background:${option.warna}"></i>${esc(option.no)} ${esc(option.pendek)}</span>`).join('') +
-    `<span class="lgi"><i class="sw" style="background:${TIE_COLOR}"></i>Seri</span>` +
-    `<span class="lgi"><i class="sw" style="background:${NO_DATA}"></i>Tanpa perolehan</span>`;
+    listed.map(index => `<span class="lgi"><i class="sw" style="background:${O[index].warna}"></i>${esc(O[index].no)} ${esc(O[index].pendek)}</span>`).join('') +
+    (others ? `<span class="lgi"><i class="sw" style="background:${OTHER_CANDIDATE}"></i>Calon di luar 10 besar provinsi</span>` : '') +
+    `<span class="lgi"><i class="sw" style="background:${TIE_COLOR}"></i>Seri</span>${noData}`;
 }
 
 /* ── GeoJSON lokal berbasis properties.key ───────────────────────── */
@@ -718,7 +857,7 @@ function renderLocator() {
 /* ── fallback grid ───────────────────────────────────────────────── */
 function noDataLabel(node) { return `<span class="cw">${isTie(node) ? 'Perolehan seri' : 'Tidak ada perolehan'}</span>`; }
 function renderGrid() {
-  const wrap = $('#gridwrap'), node = S.sel, children = node.anak, O = opsi();
+  const wrap = $('#gridwrap'), node = S.sel, children = node.anak;
   if (!children.length) {
     wrap.innerHTML = `<div class="gridhead"><h4>${esc(node.name)}</h4></div>
       <p class="note">Ini adalah tingkat wilayah terakhir pada hierarki 2019.</p>`;
@@ -731,7 +870,7 @@ function renderGrid() {
   wrap.innerHTML = `<div class="gridhead"><h4>${ANAK[node.lv]} di ${esc(node.name)}</h4>
       <span class="note">${children.length.toLocaleString('id-ID')} wilayah · tampilan grid karena GeoJSON tidak tersedia</span></div>
     <div class="cellgrid">${rows.map(({ child, votes, total, result }) => {
-      const winner = winnerOf(child);
+      const winner = winnerOf(child), O = opsiFor(child);
       const blankTps = statOf(result, 'blank-tps') || 0;
       const outlierVoteTps = statOf(result, 'outlier-vote-tps') || 0;
       const tps = statOf(result, 'tps') || 0;
@@ -759,11 +898,12 @@ function renderGrid() {
 /* ── tooltip dan panel analisis ──────────────────────────────────── */
 function tipElement() { return $('#tip'); }
 function tipShow(event, node) {
-  const tip = tipElement(), O = opsi(), result = resultOf(node), total = sahOf(node);
+  const tip = tipElement(), O = opsiFor(node), result = resultOf(node), total = sahOf(node);
   if (!result || !result.present || !(total > 0)) {
     tip.innerHTML = `<b>${esc(node.name)}</b>${LEVELS[node.lv]} · tidak ada perolehan ${esc(election().nama)}`;
   } else {
-    const top = result.votes.map((value, index) => [value, index]).sort((a, b) => b[0] - a[0]).slice(0, 3);
+    const top = shownIndexes(O).map(index => [result.votes[index], index])
+      .sort((a, b) => b[0] - a[0]).slice(0, 3);
     tip.innerHTML = `<b>${esc(node.name)}</b>${LEVELS[node.lv]} · ${fmt(total)} pilihan sah<br>` +
       top.map(([value, index]) => `<span style="color:${O[index].warna}">■</span> ${esc(O[index].pendek)} ${pct(value / total)}`).join('<br>');
   }
@@ -829,25 +969,41 @@ function coverageNote(node, result, choiceTotal) {
   const diffText = diff && diff !== 0
     ? ` Jumlah perolehan opsi berbeda ${fmt(Math.abs(diff))} suara dari kolom suara-sah tervalidasi; total pilihan yang ditampilkan selalu Σ opsi.`
     : '';
-  return `<div class="banner"><span>⚑</span><span><b>Cakupan sumber:</b> ${sourceCoverage}. ${tpsText}${blankText}${voteOutlierText}${anomalyText}${dptText}${diffText}${globalAudit}${sourceNote}</span></div>`;
+  const E = election();
+  const seatText = E && E.jenis === 'calon' && node.lv >= 1
+    ? ` <b>Kursi indikatif</b> menandai empat besar perolehan tingkat provinsi yang dihitung dari TPS berangka saja; ini bukan penetapan calon terpilih oleh KPU.`
+    : '';
+  return `<div class="banner"><span>⚑</span><span><b>Cakupan sumber:</b> ${sourceCoverage}. ${tpsText}${blankText}${voteOutlierText}${anomalyText}${dptText}${diffText}${seatText}${globalAudit}${sourceNote}</span></div>`;
 }
 
 let showAll = false;
 function chain(node) { const out = []; while (node) { out.unshift(node); node = node.parent; } return out; }
 function crumbText(node) { return chain(node).slice(0, -1).map(item => item.name).join(' › ') || 'Republik Indonesia'; }
-function renderPanel() {
-  const node = S.sel, O = opsi(), E = election(), result = resultOf(node);
-  const votes = result ? result.votes : [], total = result && result.present ? votes.reduce((a, b) => a + b, 0) : null;
+function seatBadge(option) {
+  return option.seat
+    ? '<em class="seat" title="Empat besar perolehan tingkat provinsi dari TPS berangka; bukan penetapan KPU">kursi indikatif</em>'
+    : '';
+}
+/* Blok pemenang dan bar perolehan untuk wilayah yang punya satu daftar opsi:
+   seluruh kontes partai/paslon, serta DPD dari tingkat provinsi ke bawah. */
+function choiceBlocks(node, E, votes, total) {
+  const O = opsi(), shown = shownIndexes(O);
   const winner = winnerOf(node), margin = marginOf(node);
-  const ranked = votes.map((value, index) => ({ value, index })).sort((a, b) => b.value - a.value);
-  const shown = E.jenis === 'paslon' || showAll ? ranked : ranked.slice(0, 6);
-  const bars = total > 0 ? shown.map(({ value, index }) => `
+  const ranked = shown.map(index => ({ value: number(votes[index]), index })).sort((a, b) => b.value - a.value);
+  const listed = E.jenis === 'paslon' || showAll ? ranked : ranked.slice(0, 6);
+  const bars = !shown.length
+    ? `<p class="note">Surat suara ${esc(E.nama)} tidak dibagikan di wilayah ini.</p>`
+    : total > 0 ? listed.map(({ value, index }) => `
     <div class="bar">
-      <div class="bn"><span class="dot" style="background:${O[index].warna}"></span><span>${esc(O[index].no)}. ${esc(O[index].pendek)}</span></div>
+      <div class="bn"><span class="dot" style="background:${O[index].warna}"></span><span>${esc(O[index].no)}. ${esc(O[index].pendek)}</span>${seatBadge(O[index])}</div>
       <div class="bv">${pct(value / total)}</div>
       <div class="btrack"><i class="bfill" style="width:${(value / total * 100).toFixed(2)}%;background:${O[index].warna}"></i></div>
       <div class="babs">${fmt(value)} suara</div>
     </div>`).join('') : '<p class="note">Tidak ada perolehan positif yang dapat dihitung menjadi persentase.</p>';
+  const noun = E.jenis === 'calon' ? 'calon' : 'partai';
+  const more = E.jenis !== 'paslon' && shown.length > 6
+    ? `<button class="more" id="moreb">${showAll ? '↑ Ringkas' : `↓ Lihat seluruh ${shown.length} ${noun}`}</button>`
+    : '';
   const tied = isTie(node);
   const winnerBlock = winner == null
     ? `<div class="winner" style="background:${tied ? TIE_COLOR : NO_DATA};color:#353230"><span class="wn">${tied ? 'Perolehan tertinggi seri' : 'Tidak ada pemenang yang dapat dihitung'}</span><span class="wp">${tied ? fmt(Math.max(...votes)) : '—'}</span></div>
@@ -855,7 +1011,45 @@ function renderPanel() {
     : `<div class="winner" style="background:${O[winner].warna}"><span class="wn">${esc(O[winner].no)}. ${esc(E.jenis === 'paslon' ? O[winner].pendek : O[winner].nama)}</span>
        <span class="wp">${pct(votes[winner] / total, 1)}</span></div>
        <div class="rmeta" style="margin-top:6px">Unggul ${pct(margin)} atas peringkat kedua</div>`;
-
+  const seatMeta = E.jenis === 'calon' && shown.some(index => O[index].seat)
+    ? '<div class="rmeta">Lencana <b>kursi indikatif</b> menandai empat besar tingkat provinsi, bukan penetapan KPU.</div>'
+    : '';
+  return {
+    winner: winnerBlock + seatMeta,
+    bars: `<div class="ph">Perolehan suara</div><div class="bars">${bars}</div>${more}`
+  };
+}
+/* Nasional DPD: tidak ada pemenang nasional, jadi panel menerangkan sistemnya
+   dan menampilkan calon dengan suara absolut terbanyak, masing-masing diukur
+   terhadap pilihan sah provinsinya sendiri. */
+function nationalCandidateBlocks(node, E) {
+  const provinces = node.anak.filter(P => E.rosters.has(P.code));
+  const leaders = [];
+  for (const P of provinces) {
+    const O = E.rosters.get(P.code), result = resultOf(P, E.id);
+    const total = result && result.present ? result.votes.reduce((a, b) => a + b, 0) : 0;
+    if (!(total > 0)) continue;
+    for (const index of shownIndexes(O)) {
+      const value = number(result.votes[index]);
+      if (value > 0) leaders.push({ P, option: O[index], value, share: value / total });
+    }
+  }
+  leaders.sort((a, b) => b.value - a.value);
+  const top = leaders.slice(0, 10), max = top.length ? top[0].value : 0;
+  const bars = top.length ? top.map(({ P, option, value, share }) => `
+    <div class="bar">
+      <div class="bn"><span class="dot" style="background:${option.warna}"></span><span>${esc(option.pendek)}</span>${seatBadge(option)}</div>
+      <div class="bv">${fmt(value)}</div>
+      <div class="btrack"><i class="bfill" style="width:${(value / max * 100).toFixed(2)}%;background:${option.warna}"></i></div>
+      <div class="babs">${esc(P.name)} · nomor urut ${esc(option.no)} · ${pct(share)} pilihan sah provinsinya</div>
+    </div>`).join('') : '<p class="note">Tidak ada perolehan positif yang dapat diurutkan.</p>';
+  return {
+    winner: `<div class="winner" style="background:${TOP_SHARE_COLOR}"><span class="wn">DPD dipilih per provinsi</span><span class="wp">${fmt(provinces.length)} × ${DPD_SEATS}</span></div>
+       <div class="rmeta" style="margin-top:6px">${fmt(provinces.length)} daerah pemilihan dengan ${DPD_SEATS} kursi masing-masing. Calon hanya bersaing dengan calon lain di provinsinya, jadi tidak ada pemenang nasional; pilih provinsi untuk melihat seluruh calonnya.</div>`,
+    bars: `<div class="ph">Suara terbanyak · 10 calon se-Indonesia</div><div class="bars">${bars}</div>`
+  };
+}
+function statsSection(node, result, total) {
   const registered = statOf(result, 'total-pemilih');
   const users = statOf(result, 'total-pengguna');
   const sourceTotal = statOf(result, 'suara-total');
@@ -867,23 +1061,7 @@ function renderPanel() {
   const outlierVoteTps = statOf(result, 'outlier-vote-tps');
   const turnout = turnoutOf(node);
   const invalidRate = sourceTotal > 0 ? invalid / sourceTotal : null;
-  const children = node.anak;
-  const childRows = children.map(child => {
-    const childTotal = sahOf(child), childWinner = winnerOf(child), childVotes = votesOf(child);
-    return { child, childTotal, childWinner, childVotes };
-  }).sort((a, b) => number(b.childTotal) - number(a.childTotal));
-
-  $('#panel').innerHTML = `
-    <div class="psec">
-      <div class="ph">${LEVELS[node.lv]}${node.code !== '0' ? ' · kode ' + esc(node.code) : ''}</div>
-      <h2 class="rtitle">${esc(node.name)}</h2><div class="rmeta">${esc(crumbText(node))}</div>
-      ${winnerBlock}
-    </div>
-    <div class="psec">
-      <div class="ph">Perolehan suara</div><div class="bars">${bars}</div>
-      ${E.jenis !== 'paslon' ? `<button class="more" id="moreb">${showAll ? '↑ Ringkas' : `↓ Lihat seluruh ${O.length} partai`}</button>` : ''}
-    </div>
-    <div class="psec">
+  return `<div class="psec">
       <div class="ph">Suara & partisipasi · metadata TPS tervalidasi</div>
       <dl class="kv">
         <dt>Pilihan sah (jumlah seluruh opsi)</dt><dd>${result.present ? fmt(total) : '—'}</dd>
@@ -898,15 +1076,40 @@ function renderPanel() {
       </dl>
       <div class="turnout"><i style="width:${turnout == null ? 0 : Math.max(0, Math.min(100, turnout * 100)).toFixed(1)}%"></i></div>
       <div class="rmeta">Partisipasi tervalidasi ${pct(turnout)}${turnout == null ? ' (pemilih terdaftar tidak tersedia di sumber)' : ''} · suara tidak sah ${pct(invalidRate)}</div>
-    </div>
-    <div class="psec">${coverageNote(node, result, total || 0)}</div>
-    ${children.length ? `<div class="psec"><div class="ph">${ANAK[node.lv]} (${children.length.toLocaleString('id-ID')}) · klik untuk memperdalam</div>
-      <div class="childlist">${childRows.map(({ child, childTotal, childWinner, childVotes }) => {
+    </div>`;
+}
+/* Daftar anak memakai roster wilayah anak itu sendiri; di tingkat nasional DPD
+   setiap provinsi menyebut calon teratasnya dan titiknya mengikuti warna peta. */
+function childSection(node, national) {
+  const children = node.anak;
+  if (!children.length) return '';
+  const rows = children.map(child => ({ child, childTotal: sahOf(child), childWinner: winnerOf(child), childVotes: votesOf(child) }))
+    .sort((a, b) => number(b.childTotal) - number(a.childTotal));
+  return `<div class="psec"><div class="ph">${ANAK[node.lv]} (${children.length.toLocaleString('id-ID')}) · klik untuk memperdalam</div>
+      <div class="childlist">${rows.map(({ child, childTotal, childWinner, childVotes }) => {
         if (childWinner == null) return `<button class="chi" data-k="${esc(child.key)}"><span class="dot" style="background:${isTie(child) ? TIE_COLOR : NO_DATA}"></span>
           <span class="cnm">${esc(child.name)}</span><span class="cvp">${isTie(child) ? 'Seri' : '—'}</span></button>`;
-        return `<button class="chi" data-k="${esc(child.key)}"><span class="dot" style="background:${O[childWinner].warna}"></span>
-          <span class="cnm">${esc(child.name)}</span><span class="cvp">${pct(childVotes[childWinner] / childTotal, 0)}</span></button>`;
-      }).join('')}</div></div>` : ''}`;
+        const option = opsiFor(child)[childWinner];
+        const label = national ? `${esc(child.name)} <span class="cand">· ${esc(option.pendek)}</span>` : esc(child.name);
+        return `<button class="chi" data-k="${esc(child.key)}"><span class="dot" style="background:${national ? colorOf(child) : option.warna}"></span>
+          <span class="cnm">${label}</span><span class="cvp">${pct(childVotes[childWinner] / childTotal, 0)}</span></button>`;
+      }).join('')}</div></div>`;
+}
+function renderPanel() {
+  const node = S.sel, E = election(), result = resultOf(node);
+  const votes = result ? result.votes : [], total = result && result.present ? votes.reduce((a, b) => a + b, 0) : null;
+  const national = topShareView();
+  const blocks = national ? nationalCandidateBlocks(node, E) : choiceBlocks(node, E, votes, total);
+  $('#panel').innerHTML = `
+    <div class="psec">
+      <div class="ph">${LEVELS[node.lv]}${node.code !== '0' ? ' · kode ' + esc(node.code) : ''}</div>
+      <h2 class="rtitle">${esc(node.name)}</h2><div class="rmeta">${esc(crumbText(node))}</div>
+      ${blocks.winner}
+    </div>
+    <div class="psec">${blocks.bars}</div>
+    ${statsSection(node, result, total)}
+    <div class="psec">${coverageNote(node, result, total || 0)}</div>
+    ${childSection(node, national)}`;
   const more = $('#moreb');
   if (more) more.onclick = () => { showAll = !showAll; renderPanel(); };
   $('#panel').querySelectorAll('.chi[data-k]').forEach(element => {
@@ -929,31 +1132,43 @@ function renderTable() {
     table.innerHTML = `<tbody><tr><td style="padding:14px">Tidak ada rincian wilayah di bawah ${esc(node.name)}.</td></tr></tbody>`;
     return;
   }
-  const indexes = O.map((_, index) => index);
+  // Nasional DPD tidak punya kolom calon bersama: setiap provinsi diringkas
+  // menjadi calon teratasnya sendiri.
+  const national = topShareView();
+  const indexes = national ? [] : shownIndexes(O);
+  const sortKey = S.sort.k === 'n' || S.sort.k === 'v' || (S.sort.k === 't' && national)
+    || (typeof S.sort.k === 'number' && indexes.includes(S.sort.k)) ? S.sort.k : 'v';
   const rows = children.map(child => ({ child, votes: votesOf(child), total: sahOf(child), result: resultOf(child) }));
-  rows.sort((a, b) => S.sort.d * (S.sort.k === 'n'
+  rows.sort((a, b) => S.sort.d * (sortKey === 'n'
     ? a.child.name.localeCompare(b.child.name, 'id')
-    : S.sort.k === 'v' ? number(a.total) - number(b.total)
-      : (a.total > 0 ? a.votes[S.sort.k] / a.total : -1) - (b.total > 0 ? b.votes[S.sort.k] / b.total : -1)));
+    : sortKey === 'v' ? number(a.total) - number(b.total)
+      : sortKey === 't' ? number(topShareOf(a.child)) - number(topShareOf(b.child))
+        : (a.total > 0 ? a.votes[sortKey] / a.total : -1) - (b.total > 0 ? b.votes[sortKey] / b.total : -1)));
+  const optionHeaders = national
+    ? '<th>Calon teratas</th><th data-s="t" style="text-align:right">Porsi calon teratas</th>'
+    : indexes.map(index => `<th data-s="${index}" style="text-align:right">${esc(O[index].no)} ${esc(O[index].pendek)}</th>`).join('') + '<th>Pemenang</th>';
   table.innerHTML = `<thead><tr><th data-s="n">${ANAK[node.lv]}</th><th data-s="v" style="text-align:right">Pilihan sah (Σ opsi)</th>
       <th style="text-align:right">Partisipasi valid</th>
       <th style="text-align:right">TPS kosong</th>
       <th style="text-align:right">TPS suara ekstrem</th>
-      ${indexes.map(index => `<th data-s="${index}" style="text-align:right">${esc(O[index].no)} ${esc(O[index].pendek)}</th>`).join('')}
-      <th>Pemenang</th></tr></thead>
+      ${optionHeaders}</tr></thead>
     <tbody>${rows.map(({ child, votes, total, result }) => {
-      const winner = winnerOf(child), turnout = turnoutOf(child);
+      const winner = winnerOf(child), turnout = turnoutOf(child), childOptions = opsiFor(child);
+      const winnerCell = winner == null
+        ? '<span class="dot" style="display:inline-block;background:' + (isTie(child) ? TIE_COLOR : NO_DATA) + '"></span> ' + (isTie(child) ? 'Seri' : 'Tidak ada data')
+        : `<span class="dot" style="display:inline-block;background:${national ? colorOf(child) : childOptions[winner].warna}"></span> ${esc(national ? childOptions[winner].nama : childOptions[winner].pendek)}`;
+      const optionCells = national
+        ? `<td>${winnerCell}</td><td style="text-align:right">${pct(topShareOf(child), 1)}</td>`
+        : indexes.map(index => `<td style="text-align:right">${total > 0 ? pct(votes[index] / total, 1) : '—'}</td>`).join('') + `<td>${winnerCell}</td>`;
       return `<tr><td class="nm" data-k="${esc(child.key)}">${esc(child.name)}</td><td style="text-align:right">${fmt(total)}</td>
         <td style="text-align:right">${pct(turnout, 1)}</td>
         <td style="text-align:right">${fmt(statOf(result, 'blank-tps'))}</td>
         <td style="text-align:right">${fmt(statOf(result, 'outlier-vote-tps'))}</td>
-        ${indexes.map(index => `<td style="text-align:right">${total > 0 ? pct(votes[index] / total, 1) : '—'}</td>`).join('')}
-        <td>${winner == null ? '<span class="dot" style="display:inline-block;background:' + (isTie(child) ? TIE_COLOR : NO_DATA) + '"></span> ' + (isTie(child) ? 'Seri' : 'Tidak ada data')
-          : `<span class="dot" style="display:inline-block;background:${O[winner].warna}"></span> ${esc(O[winner].pendek)}`}</td></tr>`;
+        ${optionCells}</tr>`;
     }).join('')}</tbody>`;
   table.querySelectorAll('th[data-s]').forEach(header => {
     header.onclick = () => {
-      const key = header.dataset.s === 'n' || header.dataset.s === 'v' ? header.dataset.s : +header.dataset.s;
+      const key = ['n', 'v', 't'].includes(header.dataset.s) ? header.dataset.s : +header.dataset.s;
       S.sort = { k: key, d: S.sort.k === key ? -S.sort.d : -1 };
       renderTable();
       if (!S.hasGeoView) renderGrid();
@@ -989,13 +1204,31 @@ function csvCell(value) {
 function exportCSV() {
   const node = S.sel, E = election(), children = node.anak;
   if (!children.length) return;
+  // Kolom calon DPD hanya bermakna dalam satu provinsi: di tingkat nasional
+  // setiap provinsi diekspor bersama calon teratasnya, di bawahnya tajuk kolom
+  // memuat nama calon dari roster provinsi.
+  const national = topShareView(), O = opsi();
+  const indexes = national ? [] : shownIndexes(O);
+  const optionHead = national
+    ? ['calon_teratas_no', 'calon_teratas_nama', 'calon_teratas_suara', 'calon_teratas_porsi']
+    : indexes.map(index => E.jenis === 'calon' ? `${E.voteColumns[index]} ${O[index].nama}` : E.voteColumns[index]);
   const head = ['kode_wilayah', 'wilayah', 'tingkat', 'rekaman_tersedia', 'pilihan_sah_jumlah_opsi',
-    ...S.statNames, ...E.voteColumns];
+    ...S.statNames, ...optionHead];
   const lines = [head.map(csvCell).join(',')];
   for (const child of children) {
-    const result = resultOf(child), total = result && result.present ? result.votes.reduce((a, b) => a + b, 0) : null;
-    const row = [child.key, child.name, ANAK[node.lv], result && result.present ? 1 : 0, total,
-      ...S.statNames.map(name => statOf(result, name)), ...(result && result.present ? result.votes : new Array(E.opsi.length).fill(null))];
+    const result = resultOf(child), present = !!(result && result.present);
+    const total = present ? result.votes.reduce((a, b) => a + b, 0) : null;
+    let optionCells;
+    if (national) {
+      const winner = winnerOf(child), option = winner == null ? null : opsiFor(child)[winner];
+      optionCells = option
+        ? [option.no, option.nama, result.votes[winner], (result.votes[winner] / total).toFixed(6)]
+        : [null, null, null, null];
+    } else {
+      optionCells = indexes.map(index => present ? result.votes[index] : null);
+    }
+    const row = [child.key, child.name, ANAK[node.lv], present ? 1 : 0, total,
+      ...S.statNames.map(name => statOf(result, name)), ...optionCells];
     lines.push(row.map(csvCell).join(','));
   }
   const url = URL.createObjectURL(new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
@@ -1172,7 +1405,7 @@ async function boot() {
       selectYear(next);
       return;
     }
-    const index = ['1', '2', '3', '4'].indexOf(event.key);
+    const index = ['1', '2', '3', '4', '5'].indexOf(event.key);
     const tabs = document.querySelectorAll('.tab');
     if (index >= 0 && tabs[index]) tabs[index].click();
   });
@@ -1183,7 +1416,7 @@ if (typeof module !== 'undefined' && module.exports) {
     PARTY_SPEC, PARTY_SPEC_2024, PASLON_2019, PASLON_2024, DATASETS, CONTEST_ORDER,
     CONTEST_NAMES, S, normalizeContests, buildTree, installElectionData,
     parseEntry, combineResults, resultOf, leadersOf, winnerOf, isTie, marginOf, featureNode, columnKey,
-    selectYear, select, nodeByNames
+    selectYear, select, nodeByNames, opsiFor, shownIndexes, candidateShortName, DPD_SEATS
   };
 }
 if (typeof document !== 'undefined') boot();

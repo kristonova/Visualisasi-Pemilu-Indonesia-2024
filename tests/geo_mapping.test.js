@@ -133,8 +133,11 @@ assert.strictEqual(new Set(app.PASLON_2024.map(option => option.warna)).size, 3,
   'tiga paslon 2024 harus berbeda warna');
 
 /* ── dua dataset ─────────────────────────────────────────────────── */
-const y2019 = checkDataset('2019', app.CONTEST_ORDER, 'P');
-const y2024 = checkDataset('2024', app.CONTEST_ORDER, '');
+// Sumber 2019 tidak memuat DPD, jadi daftar kontes kini milik tiap dataset.
+assert.deepStrictEqual(dataset('2019').contests, ['pilpres', 'dpr', 'dprdprov', 'dprdkab']);
+assert.deepStrictEqual(dataset('2024').contests, ['pilpres', 'dpr', 'dpd', 'dprdprov', 'dprdkab']);
+const y2019 = checkDataset('2019', dataset('2019').contests, 'P');
+const y2024 = checkDataset('2024', dataset('2024').contests, '');
 
 assert.strictEqual(y2024.contests[0].opsi.length, 3, '2024: Pilpres memiliki tiga paslon');
 assert.strictEqual(y2019.contests[0].opsi.length, 2, '2019: Pilpres memiliki dua paslon');
@@ -172,6 +175,36 @@ for (const [contestId, label] of [['dprdprov', 'DPRD Provinsi'], ['dprdkab', 'DP
   assert.ok(contest.opsi.every(option => option.pendek && !/^Partai /.test(option.pendek)),
     `${contestId} 2024: seluruh kolom harus dikenali PARTY_SPEC_2024, bukan unknownOption()`);
 }
+// DPD dipilih per provinsi: kolom calon-<nomor urut> hanya bermakna bersama
+// roster provinsinya, jadi opsi posisi nasional tidak pernah tampil sebagai
+// calon, dan luar negeri (yang tidak menerima surat suara DPD) tanpa roster.
+const dpd2024 = y2024.contests.find(contest => contest.id === 'dpd');
+assert.ok(dpd2024, '2024: kontes DPD harus terbaca dari election2024.json');
+assert.strictEqual(dpd2024.jenis, 'calon');
+assert.deepStrictEqual(dpd2024.voteColumns, Array.from({ length: 54 }, (_, index) => `calon-${index + 1}`));
+assert.ok(dpd2024.opsi.every(option => option.absent), 'dpd: opsi posisi nasional tidak boleh tampil');
+assert.strictEqual(dpd2024.rosters.size, 38, 'dpd: satu roster untuk tiap provinsi dalam negeri');
+assert.ok(!dpd2024.rosters.has('99'), 'dpd: luar negeri tidak memilih DPD');
+assert.strictEqual(app.shownIndexes(dpd2024.rosters.get('32')).length, 54, 'dpd: Jawa Barat memuat 54 calon');
+assert.strictEqual(app.shownIndexes(dpd2024.rosters.get('34')).length, 9, 'dpd: DIY memuat 9 calon');
+const installedDpd = app.S.contestsById.get('dpd');
+const jabar = app.S.root.anak.find(node => node.code === '32');
+assert.strictEqual(app.opsiFor(jabar.anak[0].anak[0], installedDpd), installedDpd.rosters.get('32'),
+  'dpd: kecamatan memakai roster provinsinya');
+assert.strictEqual(app.opsiFor(app.S.root, installedDpd), installedDpd.opsi,
+  'dpd: tingkat nasional tidak memakai roster provinsi mana pun');
+for (const [code, roster] of installedDpd.rosters) {
+  const withVotes = roster.filter(option => option.rank != null).length;
+  const seats = roster.filter(option => option.seat);
+  assert.strictEqual(seats.length, Math.min(app.DPD_SEATS, withVotes),
+    `dpd ${code}: kursi indikatif harus empat besar yang memperoleh suara`);
+  assert.ok(seats.every(option => option.rank <= app.DPD_SEATS), `dpd ${code}: kursi di luar empat besar`);
+}
+assert.strictEqual(app.candidateShortName('Dr. H. A. MUFAKHIR MUHAMMAD, M.A.'), 'A. Mufakhir Muhammad');
+assert.strictEqual(app.candidateShortName('Tgk. AHMADA'), 'Ahmada');
+assert.strictEqual(app.candidateShortName('ABDUL HADI BANG JONI'), 'Abdul Hadi Bang Joni');
+assert.strictEqual(app.candidateShortName("AHMAD BALIGH MU'AIDI"), "Ahmad Baligh Mu'aidi");
+
 // Kunci 2024 adalah kode Kemendagri apa adanya, karena itulah yang membuat
 // penggabungan dengan shapefile desa berjalan tanpa pencocokan nama.
 const sampleVillage = [...app.S.nodes.values()].find(node => node.lv === 4 && node.key.startsWith('11.'));
@@ -200,4 +233,4 @@ for (const D of app.DATASETS) {
   assert.ok(fs.existsSync(path.join(root, D.leafDir)), `${D.id}: folder chunk hasil harus ada`);
 }
 
-console.log('geo_mapping.test.js: skema dua tahun, rollup eksak, urutan surat suara, dan pemetaan key lulus');
+console.log('geo_mapping.test.js: skema dua tahun, rollup eksak, urutan surat suara, roster DPD, dan pemetaan key lulus');

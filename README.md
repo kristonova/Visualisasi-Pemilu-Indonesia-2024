@@ -12,12 +12,12 @@ Fitur pengalih **Tahun** pada bilah navigasi atas berpindah di antara dua datase
 
 | Parameter | Pemilu 2019 | Pemilu 2024 |
 | --- | --- | --- |
-| Kontes Pemilihan | Pilpres, DPR RI, DPRD Provinsi, DPRD Kab/Kota | Pilpres, DPR RI, DPRD Provinsi, DPRD Kab/Kota |
+| Kontes Pemilihan | Pilpres, DPR RI, DPRD Provinsi, DPRD Kab/Kota | Pilpres, DPR RI, DPD, DPRD Provinsi, DPRD Kab/Kota |
 | Sumber Data | Ekspor KawalPemilu + *scrape* portal KPU lama | *Scrape* portal KPU Sirekap |
 | Kode Wilayah (*Key*) | Token hierarki KPU 2019 (contoh: `P1.1207.1208.1209`) | Kode standar Kemendagri (contoh: `11.01.01.2015`) |
 | Pembagian Provinsi | 34 Provinsi + `+Luar Negeri` | 38 Provinsi + Luar Negeri |
 | Peta Batas Wilayah | Rekonstruksi multi-sumber selaras hierarki 2019 | Batas desa Kemendagri edisi Juli 2026 |
-| Kelengkapan Data TPS | 806.583 TPS Pilpres (100% memuat data angka) | Pilpres 645.858 dari 823.378 TPS (78,4%); DPR RI 426.926 dari 823.378 TPS (51,9%); DPRD Provinsi 378.445 dari 823.236 TPS (46,0%); DPRD Kab/Kota 383.513 dari 823.236 TPS (46,6%) |
+| Kelengkapan Data TPS | 806.583 TPS Pilpres (100% memuat data angka) | Pilpres 645.858 dari 823.378 TPS (78,4%); DPR RI 426.926 dari 823.378 TPS (51,9%); DPD 577.472 dari 823.231 TPS (70,1%); DPRD Provinsi 378.445 dari 823.236 TPS (46,0%); DPRD Kab/Kota 383.513 dari 823.236 TPS (46,6%) |
 
 Hal-hal penting yang perlu diperhatikan saat membandingkan kedua periode:
 
@@ -25,7 +25,7 @@ Hal-hal penting yang perlu diperhatikan saat membandingkan kedua periode:
 - **Tingkat kelengkapan data berbeda.** Pada Pemilu 2024, sistem Sirekap KPU sempat menghentikan publikasi konversi angka untuk sebagian TPS dan hanya menampilkan pindaian formulir Model C1. Dengan demikian, total suara 2024 pada dashboard ini murni merupakan akumulasi dari TPS yang memuat angka hasil. Rincian selengkapnya dapat dibaca di [`AUDIT_2024.md`](AUDIT_2024.md) serta tercantum pada panel informasi dan catatan kaki aplikasi.
 - **Konsistensi visual warna kandidat.** Warna biru secara konsisten digunakan untuk pasangan Prabowo Subianto (nomor urut 02 pada kedua pemilu), sedangkan warna merah digunakan untuk pasangan yang diusung oleh PDI Perjuangan (Jokowi–Ma'ruf pada 2019, Ganjar–Mahfud pada 2024). Langkah ini menjaga kesinambungan visual agar pergantian tahun tidak mengubah makna warna secara membingungkan.
 
-Data pemilihan DPD tidak tersedia untuk kedua periode karena sumber data mentah tidak memuat hasil DPD. Untuk Pemilu 2024, hasil DPR RI, DPRD Provinsi, dan DPRD Kabupaten/Kota kini sudah dimuat berdampingan dengan Pilpres, sehingga kedua tahun sama-sama memuat empat kontes. Perlu dicatat bahwa DKI Jakarta dan Luar Negeri tidak menyelenggarakan pemilihan DPRD Kabupaten/Kota, sehingga kedua wilayah itu memang kosong pada kontes tersebut. Berkas `pemilu-2024.html` tetap dipertahankan untuk kompatibilitas tautan lama dengan isi yang identik dengan `index.html`. Kedua berkas tersebut mendukung parameter URL `?tahun=2019` maupun `?tahun=2024`.
+Untuk Pemilu 2024, hasil DPR RI, DPD, DPRD Provinsi, dan DPRD Kabupaten/Kota sudah dimuat berdampingan dengan Pilpres, sehingga dataset 2024 memuat lima kontes. Pemilu 2019 tetap memuat empat kontes karena sumber data mentahnya tidak memuat hasil DPD; tab DPD karena itu hanya muncul pada tahun 2024. Perlu dicatat bahwa DKI Jakarta dan Luar Negeri tidak menyelenggarakan pemilihan DPRD Kabupaten/Kota, dan pemilih luar negeri juga tidak menerima surat suara DPD, sehingga wilayah-wilayah itu memang kosong pada kontes tersebut. Berkas `pemilu-2024.html` tetap dipertahankan untuk kompatibilitas tautan lama dengan isi yang identik dengan `index.html`. Kedua berkas tersebut mendukung parameter URL `?tahun=2019` maupun `?tahun=2024`.
 
 ## Fitur Utama
 
@@ -34,6 +34,7 @@ Data pemilihan DPD tidak tersedia untuk kedua periode karena sumber data mentah 
 - **Peta Interaktif GeoJSON Lokal:** Pemetaan presisi tinggi dengan pencocokan kode wilayah eksak melalui `properties.key`.
 - **Tampilan Cadangan Berbasis Kisi (*Grid Fallback*):** Otomatis menyajikan tata letak kisi (*grid*) jika data batas poligon pada tingkat wilayah terkait tidak tersedia.
 - **Beragam Mode Visualisasi Tematik:** Pilihan visualisasi peta pemenang, margin kemenangan, perolehan persentase suara kandidat/partai, serta tingkat partisipasi pemilih tervalidasi.
+- **DPD per Provinsi:** Calon DPD 2024 berbeda di setiap provinsi, sehingga tingkat nasional mewarnai provinsi menurut porsi calon teratasnya sendiri dan menampilkan sepuluh calon dengan suara terbanyak se-Indonesia; mulai tingkat provinsi, peta, legenda, tabel, dan ekspor memakai daftar calon provinsi tersebut, dan empat besar provinsi diberi lencana *kursi indikatif* (bukan penetapan KPU).
 - **Penanganan Data Khusus & Transparan:** Mengakomodasi perolehan suara seri, data tidak tersedia, TPS dengan hasil kosong (*blank*), serta penandaan anomali data.
 - **Alat Bantu Lengkap:** Fitur pencarian cepat di semua tingkatan wilayah, navigasi rekam jejak (*breadcrumb*), *tooltip* interaktif, panel ringkasan analisis, dan tabel rekapitulasi perolehan suara.
 - **Kinerja Optimal & Ringan:** Pemuatan data perolehan suara tingkat desa per provinsi dan potongan geometri wilayah dilakukan sesuai kebutuhan (*on-demand*).
@@ -44,7 +45,7 @@ Pintasan keyboard:
 | Tombol | Fungsi |
 | --- | --- |
 | `T` | Berpindah tahun pemilu (2019 ↔ 2024) |
-| `1`–`4` | Memilih jenis kontes pemilihan |
+| `1`–`5` | Memilih jenis kontes pemilihan (2019 hanya memiliki empat tab) |
 | `/` | Fokus ke kolom pencarian |
 | `Esc` atau `Backspace` | Kembali ke tingkat wilayah di atasnya |
 
@@ -80,7 +81,7 @@ Perolehan suara setiap opsi dipertahankan persis sesuai data sumber aslinya. Dat
 
 ## Audit Data Pemilu 2024
 
-Data Pemilu 2024 bersumber tunggal dari hasil *scraping* sistem **Sirekap KPU** pada repositori [`scrapping-pemilu-2024`](https://github.com/), yakni direktori `data_pilpres/`, `data_dpr_ri/`, `data_dpr_prov/`, dan `data_dpr_kabkot/` yang masing-masing berpola `<kode-provinsi>/<kode-kabkot>.json`. Seluruh tingkat kelurahan/desa telah menggunakan kode wilayah resmi Kemendagri, sehingga proses pengolahan data 2024 tidak memerlukan pencocokan nama (*name matching*).
+Data Pemilu 2024 bersumber tunggal dari hasil *scraping* sistem **Sirekap KPU** pada repositori [`scrapping-pemilu-2024`](https://github.com/), yakni direktori `data_pilpres/`, `data_dpr_ri/`, `data_dpd/`, `data_dpr_prov/`, dan `data_dpr_kabkot/` yang masing-masing berpola `<kode-provinsi>/<kode-kabkot>.json`. Seluruh tingkat kelurahan/desa telah menggunakan kode wilayah resmi Kemendagri, sehingga proses pengolahan data 2024 tidak memerlukan pencocokan nama (*name matching*).
 
 Alur pemrosesan membaca **643 berkas JSON** (sekitar 978 MB), 83.860 kelurahan/desa, dan **823.378 data TPS**. Setiap berkas sumber didokumentasikan lengkap dengan ukuran dan *checksum* SHA-256 pada `data/audit2024.json`.
 
@@ -110,28 +111,30 @@ Kedua dataset menggunakan struktur kontrak data (Schema v2) yang seragam; perbed
 | `data/election2019.json` | Metadata kontes, sembilan ringkasan statistik, dan data agregat tingkat kecamatan |
 | `data/election2019/P<kode>.json` | 35 *chunk* hasil per kelurahan/desa yang dimuat sesuai provinsi aktif |
 | `data/audit2019.json` | Inventaris berkas, ukuran, SHA-256, cakupan wilayah, total suara, dan log anomali |
-| `data/wilayah2024.json` | Hierarki wilayah Kemendagri 2024, `key_prefix` kosong, dan daftar kontes 2024 (`pilpres`, `dpr`, `dprdprov`, `dprdkab`) |
-| `data/election2024.json` | Metadata kontes, sembilan ringkasan statistik, dan data agregat tingkat kecamatan |
+| `data/wilayah2024.json` | Hierarki wilayah Kemendagri 2024, `key_prefix` kosong, dan daftar kontes 2024 (`pilpres`, `dpr`, `dpd`, `dprdprov`, `dprdkab`) |
+| `data/election2024.json` | Metadata kontes (termasuk daftar calon DPD per provinsi), sembilan ringkasan statistik, dan data agregat tingkat kecamatan |
 | `data/election2024/<kode>.json` | 39 *chunk* hasil per kelurahan/desa (satu berkas per provinsi) |
 | `data/audit2024.json` | Inventaris berkas sumber tiap surat suara, SHA-256, total mentah, dan rekapitulasi anomali |
 
 Sembilan indikator statistik dalam skema data meliputi `total-pemilih`, `total-pengguna`, `suara-total`, `suara-sah`, `suara-tidak-sah`, `tps`, `validated-tps`, `blank-tps`, dan `outlier-vote-tps`. Setiap entri pemilihan disimpan dalam format pasangan larik (*array*) perolehan suara dan larik statistik. Nilai `null` menandakan bahwa jenis pemilihan terkait tidak tersedia untuk wilayah tersebut.
 
-Identifikasi kolom pilihan menggunakan penamaan berbasis posisi: `pemilih-1`/`pemilih-2` untuk Pilpres 2019, `paslon-1` s.d. `paslon-3` untuk Pilpres 2024, `partai-<nomor urut>` untuk seluruh kontes legislatif 2024, serta nama partai politik untuk pemilihan legislatif 2019.
+Identifikasi kolom pilihan menggunakan penamaan berbasis posisi: `pemilih-1`/`pemilih-2` untuk Pilpres 2019, `paslon-1` s.d. `paslon-3` untuk Pilpres 2024, `partai-<nomor urut>` untuk kontes legislatif berbasis partai 2024, `calon-<nomor urut>` untuk DPD 2024, serta nama partai politik untuk pemilihan legislatif 2019.
 
 Kontes DPR RI 2024 memakai 18 kolom: `partai-1` s.d. `partai-17` ditambah `partai-24`. Nomor urut 18–23 adalah partai lokal Aceh yang menurut undang-undang hanya berkompetisi pada pemilihan DPRA dan DPRK, sehingga kolomnya memang tidak ada pada surat suara DPR RI dan bukan merupakan data yang hilang.
 
 Kontes DPRD Provinsi dan DPRD Kabupaten/Kota 2024 memakai seluruh 24 kolom (`partai-1` s.d. `partai-24`), sebab surat suara DPRA dan DPRK di Aceh justru memuat keenam partai lokal tersebut. Di 37 provinsi lainnya keenam kolom itu bernilai nol karena partainya tidak tercetak pada surat suara, bukan karena tidak ada pemilih yang memilihnya; pembedaan ini diuji secara eksplisit pada `tests/test_2024_artifacts.py`.
 
+Kontes DPD 2024 memakai 54 kolom posisi surat suara (`calon-1` s.d. `calon-54`, mengikuti daftar terpanjang di Jawa Barat). Karena setiap provinsi mencetak daftar calonnya sendiri (8 hingga 54 calon, total 668), kolom yang sama berarti orang yang berbeda di tiap provinsi; nama calon dikirim sebagai `rosters` per kode provinsi pada entri kontes `dpd` di `data/election2024.json`, sedangkan ID calon KPU dan perolehan per calon per provinsi (`candidate_totals`) tersimpan di `data/audit2024.json`. Kolom di atas jumlah calon suatu provinsi bernilai nol karena nomornya tidak tercetak, dan provinsi `99` (Luar Negeri) tidak memiliki roster karena pemilih PPLN tidak menerima surat suara DPD.
+
 ### Menambahkan Kontes Pemilihan 2024
 
-Seluruh empat kontes 2024 (`pilpres`, `dpr`, `dprdprov`, `dprdkab`) telah dibangun oleh `build_2024_data.py` melalui entri `ContestSpec` pada konstanta `CONTESTS`. Objek `PARTY_SPEC_2024` pada `app.js` mendefinisikan 24 partai peserta Pemilu 2024 lengkap beserta nomor urutnya, dengan konvensi penamaan kolom **`partai-<nomor urut>`**.
+Seluruh lima kontes 2024 (`pilpres`, `dpr`, `dpd`, `dprdprov`, `dprdkab`) telah dibangun oleh `build_2024_data.py` melalui entri `ContestSpec` pada konstanta `CONTESTS`, berurutan sesuai lima surat suara yang diterima pemilih. Kontes `dpd` memakai medan `roster_key` (`dpd_candidates`) agar kunci `chart` berupa ID calon diterjemahkan ke nomor urut melalui daftar calon provinsi pada berkas yang sama. Objek `PARTY_SPEC_2024` pada `app.js` mendefinisikan 24 partai peserta Pemilu 2024 lengkap beserta nomor urutnya, dengan konvensi penamaan kolom **`partai-<nomor urut>`**.
 
-Apabila di kemudian hari terdapat surat suara lain yang perlu ditambahkan (misalnya DPD), langkah-langkah yang perlu dilakukan:
+Apabila di kemudian hari terdapat surat suara lain yang perlu ditambahkan, langkah-langkah yang perlu dilakukan:
 
-1. Menambahkan satu entri `ContestSpec` pada `CONTESTS` di `build_2024_data.py`, berisi ID kontes, direktori sumber, serta pemetaan kunci `chart` Sirekap ke kolom keluaran. Khusus untuk surat suara yang memuat partai lokal Aceh (nomor urut 18–23), medan `local_options` dipakai agar pemeriksaan kelengkapan `chart` tidak menuntut keenam kolom itu di luar Aceh;
+1. Menambahkan satu entri `ContestSpec` pada `CONTESTS` di `build_2024_data.py`, berisi ID kontes, direktori sumber, serta pemetaan kunci `chart` Sirekap ke kolom keluaran. Khusus untuk surat suara yang memuat partai lokal Aceh (nomor urut 18–23), medan `local_options` dipakai agar pemeriksaan kelengkapan `chart` tidak menuntut keenam kolom itu di luar Aceh, sedangkan surat suara yang daftar opsinya berbeda per provinsi memakai `roster_key`;
 2. Menjalankan ulang `build_2024_data.py`, yang akan menuliskan slot kontes baru ke `data/election2024.json`, seluruh berkas *chunk* desa, `data/wilayah2024.json`, dan `data/audit2024.json` dengan urutan indeks yang konsisten; dan
-3. Mendaftarkan ID kontes yang sama ke dalam `CONTEST_ORDER` dan `CONTEST_NAMES` di `app.js`, serta memperbarui konstanta `CONTESTS` pada `tests/test_2024_artifacts.py`.
+3. Mendaftarkan ID kontes yang sama ke dalam `CONTEST_ORDER` dan `CONTEST_NAMES` di `app.js` serta ke daftar `contests` pada entri `DATASETS` tahun terkait, kemudian memperbarui konstanta `CONTESTS` pada `tests/test_2024_artifacts.py`.
 
 Elemen antarmuka seperti tab pemilihan, legenda warna, tabel rincian, dan fitur ekspor CSV akan menyesuaikan secara otomatis. Jika terdapat nama kolom yang belum dikenali, sistem akan menampilkannya melalui *fallback* `unknownOption()` sehingga kekeliruan penamaan data dapat langsung terdeteksi.
 
@@ -191,7 +194,7 @@ Direktori sumber `SHP GIS/` diabaikan oleh Git karena ukurannya yang besar. Seba
 Hindari membuka berkas HTML langsung melalui protokol `file://` karena peramban modern memblokir permintaan `fetch()` ke berkas JSON lokal. Jalankan *web server* lokal dari direktori utama proyek:
 
 ```powershell
-cd "D:\PROJECT\Visualisasi Pemilu Indonesia 2024"
+cd "D:\PROJECT\Project Pribadi\Visualisasi Pemilu Indonesia 2024"
 python -m http.server 8000
 ```
 
@@ -250,11 +253,11 @@ Skrip ini memuat struktur hierarki wilayah KPU, merekonsiliasinya dengan berkas 
 
 ```powershell
 python build_2024_data.py `
-  --source "D:\PROJECT\scrapping-pemilu-2024" `
+  --source "D:\PROJECT\Project Pribadi\scrapping-pemilu-2024" `
   --output data
 ```
 
-Skrip membaca 643 berkas `<prov>/<kab>.json` pada masing-masing dari keempat direktori kontes, mengambil nama provinsi dari `master_data/wilayah_provinsi.json` dan nama kabupaten/kecamatan dari berkas DBF *shapefile*, menerapkan aturan validasi per TPS, lalu menyusun berkas `wilayah2024.json`, `election2024.json`, *chunk* desa per provinsi, serta `audit2024.json`. Sebelum berkas dipasang ke direktori utama, sistem melakukan verifikasi integritas: agregasi suara tingkat kecamatan harus cocok persis dengan total penjumlahan *chunk* desa, dan daftar desa pada hierarki harus identik dengan daftar desa pada hasil pemilu.
+Skrip membaca 643 berkas `<prov>/<kab>.json` pada masing-masing dari kelima direktori kontes (untuk DPD sekaligus daftar calon provinsinya), mengambil nama provinsi dari `master_data/wilayah_provinsi.json` dan nama kabupaten/kecamatan dari berkas DBF *shapefile*, menerapkan aturan validasi per TPS, lalu menyusun berkas `wilayah2024.json`, `election2024.json`, *chunk* desa per provinsi, serta `audit2024.json`. Sebelum berkas dipasang ke direktori utama, sistem melakukan verifikasi integritas: agregasi suara tingkat kecamatan harus cocok persis dengan total penjumlahan *chunk* desa, dan daftar desa pada hierarki harus identik dengan daftar desa pada hasil pemilu.
 
 ### Memproses Data GIS 2019
 
@@ -336,7 +339,7 @@ Uji transaksi memverifikasi mekanisme *commit* dan *rollback* direktori saat pro
 - **Distribusi Data Pilpres 2019 Tidak Merata:** Ketiadaan data Pilpres 2019 terpusat di wilayah tertentu; 85 kecamatan tanpa data hampir seluruhnya berada di Papua karena sistem SITUNG KPU tidak merampungkan rekapitulasi untuk distrik yang menerapkan sistem noken. Akibatnya, total suara yang terekam di Papua hanya 71% (paslon 01) dan 61% (paslon 02) dari hasil resmi, serta data Kabupaten Asmat tidak tersedia sama sekali.
 - **Batasan Statistik Partisipasi 2019:** Tingkat partisipasi Pilpres 2019 hanya dapat dihitung pada TPS yang memiliki data DPT (497.941 dari 806.583 TPS). Oleh karena itu, angka partisipasi tidak dapat diartikan sebagai angka agregat nasional.
 - **Pengecualian Wilayah Luar Negeri Khusus:** Data DPRD Kabupaten/Kota tidak menyertakan 4 TPS di Harare, Zimbabwe (yang sempat tercatat pada data DPRD Provinsi); entri wilayah tersebut tetap ditampilkan dengan nilai kontes `null`.
-- **Ketiadaan Data Pemilihan DPD:** Data pemilihan DPD tidak divisualisasikan karena tidak tersedianya berkas sumber untuk DPD.
+- **Ketiadaan Data Pemilihan DPD 2019:** Data pemilihan DPD 2019 tidak divisualisasikan karena tidak tersedia berkas sumbernya; tab DPD hanya muncul pada tahun 2024.
 - **Sifat Data Scraping:** Seluruh data berasal dari hasil *scraping* portal KPU dan mengandung anomali bawaan dari sumber aslinya. Pengguna disarankan membaca `data/audit2019.json` sebagai pendamping visualisasi; repositori ini ditujukan untuk analisis data dan bukan merupakan dokumen pengganti keputusan penetapan resmi KPU.
 - **Batas Geospasial 2019 Bersifat Rekonstruksi:** Batas wilayah administratif 2019 merupakan hasil rekonstruksi multi-sumber yang diselaraskan secara historis dengan hierarki KPU 2019, bukan rekaman batas resmi tunggal pada hari pemungutan suara.
 
@@ -345,7 +348,9 @@ Catatan Khusus Pemilu 2024:
 - **Perolehan Suara 2024 Bukan Rekapitulasi Resmi Nasional:** Sistem Sirekap KPU hanya memublikasikan angka tabulasi pada 645.858 dari 823.378 TPS (78,4%). Dengan demikian, total 128.089.145 suara paslon pada dashboard ini murni akumulasi dari TPS yang memuat angka. Untuk data penetapan resmi pemenang pemilu, silakan merujuk langsung pada Surat Keputusan penetapan KPU RI.
 - **Kekosongan Data Terpusat Secara Geografis:** Tingkat ketiadaan data 2024 sangat terpusat: dari 94,8% di Bengkulu hingga hanya 0,1% di Papua Pegunungan. Peta perolehan suara di enam provinsi wilayah Papua tidak dapat dijadikan kesimpulan hasil pemilu di daerah tersebut.
 - **Cakupan Validasi Partisipasi 2024:** Statistik partisipasi pemilih 2024 hanya dihitung dari 494.311 TPS (60,0%) yang memenuhi kriteria validasi metadata; data TPS yang memiliki anomali tidak disertakan dalam kalkulasi agregat partisipasi.
-- **Ketersediaan Kontes Pemilihan 2024:** Visualisasi 2024 mencakup pemilihan Presiden dan Wakil Presiden, DPR RI, DPRD Provinsi, serta DPRD Kabupaten/Kota. Data DPD tetap tidak tersedia karena sumber penarikannya tidak memuat hasil DPD.
+- **Ketersediaan Kontes Pemilihan 2024:** Visualisasi 2024 mencakup pemilihan Presiden dan Wakil Presiden, DPR RI, DPD, DPRD Provinsi, serta DPRD Kabupaten/Kota.
+- **DPD 2024 Dipilih per Provinsi:** Setiap provinsi adalah satu daerah pemilihan berkursi empat dengan daftar calonnya sendiri, sehingga tidak ada pemenang DPD nasional. Lencana *kursi indikatif* pada empat besar provinsi dihitung hanya dari TPS berangka dan **bukan penetapan calon terpilih oleh KPU**; di provinsi berselisih tipis (misalnya Aceh dan Papua Barat) maupun bercakupan rendah (Papua) urutannya dapat berbeda dari hasil resmi.
+- **Cakupan DPD 2024:** Sebanyak 70,1% TPS memuat angka (577.472 dari 823.231), dengan akumulasi 95.403.370 suara calon—di bawah Pilpres, tetapi jauh di atas ketiga kontes legislatif berbasis partai. Seluruh 3.075 TPS PPLN kosong secara sah karena pemilih luar negeri tidak menerima surat suara DPD. Sumber DPD tidak memuat Desa Sungai Mawang (`61.06.23.2005`, Kapuas Hulu) sehingga slotnya `null`, serta tidak memuat satu baris pun untuk Desa Sungai Antu (`61.06.23.2001`) dan PPLN Kuala Lumpur (U).
 - **Cakupan DPR RI 2024 Lebih Rendah:** Hanya 51,9% TPS DPR RI yang memuat angka, dibanding 78,4% pada Pilpres, sehingga akumulasi 77.308.092 suara partai setara sekitar separuh suara sah nasional. Kekosongan *scrape* untuk Kecamatan Gunungkencana di Kabupaten Lebak beserta 12 desanya, ditambah satu TPS di Desa Sekarwangi, Kecamatan Curugbitung, telah tertutup melalui penarikan ulang pada 27 Agustus 2026, sehingga kontes ini kini mencakup seluruh 83.860 desa/kelurahan.
 - **Cakupan DPRD Provinsi 2024 Paling Rendah:** Hanya 46,0% TPS DPRD Provinsi yang memuat angka, dengan akumulasi 66.366.387 suara partai. Kekosongan *scrape* untuk Sulawesi Tengah—Kabupaten Donggala, Morowali, Morowali Utara, Kota Palu, serta dua kecamatan di Kabupaten Buol, total 487 desa pada 45 kecamatan—telah tertutup melalui penarikan ulang pada 27 Agustus 2026, sehingga kontes ini kini mencakup seluruh 83.860 desa/kelurahan. Seluruh 129 PPLN tetap tercatat kosong, sebab pemilih luar negeri memang tidak memilih DPRD Provinsi.
 - **Cakupan DPRD Kabupaten/Kota 2024:** Sebanyak 46,6% TPS memuat angka (383.513 dari 823.236), dengan akumulasi 71.699.129 suara partai. Penyebut itu mencakup DKI Jakarta dan Luar Negeri yang tidak menyelenggarakan kontes ini; bila keduanya dikeluarkan, cakupannya menjadi 48,6% dari 789.395 TPS. Kontes ini terekam utuh pada seluruh 83.860 desa/kelurahan tanpa satu pun slot `null`.

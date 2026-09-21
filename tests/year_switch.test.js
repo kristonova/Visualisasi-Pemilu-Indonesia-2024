@@ -153,6 +153,67 @@ const nameChain = node => {
   assert.deepStrictEqual(nameChain(S.sel), before);
   assert.strictEqual(S.contestsById.get('pilpres').opsi.length, optionCounts.get(first.id));
 
+  // ── DPD: roster berganti per provinsi ─────────────────────────────
+  // Stub innerHTML di atas sudah menolak markup berisi undefined/NaN, jadi
+  // setiap render di bawah sekaligus memeriksa jalur roster dan nasional.
+  assert.strictEqual(S.tahun, '2024');
+  assert.ok(elements.get('tabs').innerHTML.includes('DPD RI 2024'), 'tab DPD harus tampil pada 2024');
+  const pemiluBefore = S.pemilu, modeBefore = S.mode;
+  S.pemilu = 'dpd';
+  for (const mode of ['winner', 'margin', 'share', 'turnout']) {
+    S.mode = mode;
+    await app.select(S.root);
+  }
+  S.mode = 'winner';
+  await app.select(S.root);
+  assert.ok(elements.get('panel').innerHTML.includes('DPD dipilih per provinsi'),
+    'nasional DPD tidak boleh mengklaim pemenang nasional');
+  assert.ok(elements.get('panel').innerHTML.includes('10 calon se-Indonesia'));
+  assert.ok(elements.get('legend').innerHTML.includes('Porsi suara calon teratas'));
+  assert.ok(elements.get('dtable').innerHTML.includes('Calon teratas'));
+  assert.ok(!/Calon \d+</.test(elements.get('dtable').innerHTML), 'kolom posisi nasional tidak boleh tampil');
+
+  const jabar = S.root.anak.find(node => node.code === '32');
+  for (const mode of ['winner', 'margin', 'share', 'turnout']) {
+    S.mode = mode;
+    await app.select(jabar);
+  }
+  S.mode = 'share';
+  await app.select(jabar);
+  assert.strictEqual((elements.get('focussel').innerHTML.match(/<option/g) || []).length, 54,
+    'Jawa Barat: pilihan fokus memuat 54 calon');
+  S.mode = 'winner';
+  await app.select(jabar);
+  assert.strictEqual((elements.get('panel').innerHTML.match(/class="seat"/g) || []).length, app.DPD_SEATS,
+    'Jawa Barat: tepat empat lencana kursi indikatif di panel provinsi');
+  const jabarKab = jabar.anak[0];
+  await app.select(jabarKab);
+  await app.select(jabarKab.anak[0]);
+  await app.select(jabarKab.anak[0].anak[0]);
+  assert.strictEqual(S.sel.lv, 4, 'drill-down DPD harus sampai tingkat desa');
+
+  // Fokus nomor 41 tidak tercetak di DIY (9 calon) dan harus pindah.
+  const diy = S.root.anak.find(node => node.code === '34');
+  S.mode = 'share';
+  S.fokus = 40;
+  await app.select(diy);
+  assert.ok(S.fokus < 9, 'fokus harus pindah ke calon yang tercetak di provinsi aktif');
+  S.mode = 'winner';
+  const overseasDpd = S.root.anak.find(node => node.code === '99');
+  if (overseasDpd) {
+    await app.select(overseasDpd);
+    assert.ok(elements.get('legend').innerHTML.includes('tidak dibagikan'),
+      'luar negeri tidak menerima surat suara DPD');
+  }
+
+  await app.select(jabar);
+  await app.selectYear('2019');
+  assert.ok(!elements.get('tabs').innerHTML.includes('DPD'), '2019 tidak punya tab DPD');
+  assert.ok(elements.get('yearnote').textContent.includes('DPD RI tidak tersedia'));
+  await app.selectYear('2024');
+  S.pemilu = pemiluBefore;
+  S.mode = modeBefore;
+
   // ── wilayah tanpa geometri jatuh ke grid ──────────────────────────
   const overseas = S.root.anak.find(node => node.name.includes('LUAR NEGERI'));
   if (overseas) {
