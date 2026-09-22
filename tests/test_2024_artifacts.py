@@ -455,6 +455,51 @@ def check_gis(names, parents, levels) -> None:
         f"{feature_counts['district']} kecamatan · {feature_counts['village']} desa · "
         f"{len(missing_villages)} desa tanpa geometri"
     )
+    check_province_villages(names, parents, levels, by_level["province"], seen["village"])
+
+
+def check_province_villages(names, parents, levels, provinces: set[str], villages: set[str]) -> None:
+    """``desaprov/<provinsi>.json`` for the "Batas: Desa" map mode.
+
+    The layer is derived from the installed ``desa/`` chunks, so every province
+    file must hold exactly the villages those chunks draw — no more, no fewer —
+    and the extra simplification must still leave valid polygons. It is kept
+    out of ``feature_counts`` because the audit counts the source layers only."""
+
+    folder = GIS / "desaprov"
+    assert folder.is_dir(), f"folder GIS hilang: {folder}"
+    stems = {path.stem for path in folder.glob("*.json")}
+    assert stems == provinces, (
+        f"desaprov: berkas tidak sepadan provinsi; hilang={sorted(provinces - stems)[:5]}, "
+        f"asing={sorted(stems - provinces)[:5]}"
+    )
+    expected: dict[str, set[str]] = {province: set() for province in provinces}
+    for key in villages:
+        expected[parents[parents[parents[key]]]].add(key)
+    total = 0
+    for path in sorted(folder.glob("*.json")):
+        relative = path.relative_to(GIS).as_posix()
+        data = load(path)
+        assert data.get("type") == "FeatureCollection", f"{relative}: bukan FeatureCollection"
+        keys: set[str] = set()
+        for index, row in enumerate(data["features"]):
+            context = f"{relative} feature {index}"
+            properties = row.get("properties")
+            assert isinstance(properties, dict), f"{context}: properties harus object"
+            key = properties.get("key")
+            assert key in names and levels[key] == "village", f"{context}: bukan desa: {key}"
+            assert properties.get("level") == "village", f"{context}: properties.level salah"
+            assert properties.get("name") == names[key], f"{context}: nama tidak sepadan hierarki"
+            assert key not in keys, f"{context}: key ganda {key}"
+            keys.add(key)
+            check_geometry(row.get("geometry"), context)
+        assert keys == expected[path.stem], (
+            f"{relative}: desa tidak sama dengan chunk desa provinsinya; "
+            f"hilang={sorted(expected[path.stem] - keys)[:5]}, asing={sorted(keys - expected[path.stem])[:5]}"
+        )
+        total += len(keys)
+    assert total == len(villages)
+    print(f"  GIS desaprov: {len(stems)} berkas · {total} desa")
 
 
 def main() -> None:

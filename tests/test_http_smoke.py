@@ -52,6 +52,11 @@ def main() -> None:
                 f"{gis_dir}: {len(provinces['features'])} provinsi, diharapkan {province_count}"
             )
             assert fetch(base_url, f"{gis_dir}/kab/{kab}.json")
+            # Mode Batas Desa: satu berkas desa gabungan per provinsi.
+            villages = json.loads(fetch(base_url, f"{gis_dir}/desaprov/{kab}.json"))
+            assert villages["type"] == "FeatureCollection" and villages["features"], (
+                f"{gis_dir}/desaprov/{kab}.json harus memuat poligon desa"
+            )
     finally:
         server.shutdown()
         server.server_close()

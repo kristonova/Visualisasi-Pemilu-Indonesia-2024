@@ -25,12 +25,14 @@ Hal-hal penting yang perlu diperhatikan saat membandingkan kedua periode:
 - **Tingkat kelengkapan data berbeda.** Pada Pemilu 2024, sistem Sirekap KPU sempat menghentikan publikasi konversi angka untuk sebagian TPS dan hanya menampilkan pindaian formulir Model C1. Dengan demikian, total suara 2024 pada dashboard ini murni merupakan akumulasi dari TPS yang memuat angka hasil. Rincian selengkapnya dapat dibaca di [`AUDIT_2024.md`](AUDIT_2024.md) serta tercantum pada panel informasi dan catatan kaki aplikasi.
 - **Konsistensi visual warna kandidat.** Warna biru secara konsisten digunakan untuk pasangan Prabowo Subianto (nomor urut 02 pada kedua pemilu), sedangkan warna merah digunakan untuk pasangan yang diusung oleh PDI Perjuangan (Jokowi–Ma'ruf pada 2019, Ganjar–Mahfud pada 2024). Langkah ini menjaga kesinambungan visual agar pergantian tahun tidak mengubah makna warna secara membingungkan.
 
-Untuk Pemilu 2024, hasil DPR RI, DPD, DPRD Provinsi, dan DPRD Kabupaten/Kota sudah dimuat berdampingan dengan Pilpres, sehingga dataset 2024 memuat lima kontes. Pemilu 2019 tetap memuat empat kontes karena sumber data mentahnya tidak memuat hasil DPD; tab DPD karena itu hanya muncul pada tahun 2024. Perlu dicatat bahwa DKI Jakarta dan Luar Negeri tidak menyelenggarakan pemilihan DPRD Kabupaten/Kota, dan pemilih luar negeri juga tidak menerima surat suara DPD, sehingga wilayah-wilayah itu memang kosong pada kontes tersebut. Berkas `pemilu-2024.html` tetap dipertahankan untuk kompatibilitas tautan lama dengan isi yang identik dengan `index.html`. Kedua berkas tersebut mendukung parameter URL `?tahun=2019` maupun `?tahun=2024`.
+Untuk Pemilu 2024, hasil DPR RI, DPD, DPRD Provinsi, dan DPRD Kabupaten/Kota sudah dimuat berdampingan dengan Pilpres, sehingga dataset 2024 memuat lima kontes. Pemilu 2019 tetap memuat empat kontes karena sumber data mentahnya tidak memuat hasil DPD; tab DPD karena itu hanya muncul pada tahun 2024. Perlu dicatat bahwa DKI Jakarta dan Luar Negeri tidak menyelenggarakan pemilihan DPRD Kabupaten/Kota, dan pemilih luar negeri juga tidak menerima surat suara DPD, sehingga wilayah-wilayah itu memang kosong pada kontes tersebut. Berkas `pemilu-2024.html` tetap dipertahankan untuk kompatibilitas tautan lama dengan isi yang identik dengan `index.html`. Kedua berkas tersebut mendukung parameter URL `?tahun=2019` maupun `?tahun=2024`, serta tautan tampilan lengkap berbentuk `#2024/pilpres/61?warna=pemenang&batas=desa` (tahun, kontes, kode wilayah, pewarnaan, mode batas, dan fokus opsi).
 
 ## Fitur Utama
 
 - **Peralihan Tahun Fleksibel (2019/2024):** Dilengkapi mekanisme pemuatan bertahap (*lazy loading*); data yang sudah diunduh disimpan dalam memori (*cache*) sehingga tidak perlu diunduh ulang saat berpindah tahun.
 - **Navigasi Berjenjang (*Drill-Down*):** Penelusuran hierarki lengkap dari tingkat Nasional → Provinsi → Kabupaten/Kota → Kecamatan → Kelurahan/Desa.
+- **Mode Batas: Berjenjang | Desa:** Pilihan *Desa* mewarnai seluruh desa/kelurahan dalam satu provinsi atau kabupaten/kota sekaligus, dengan batas kabupaten/kota (atau kecamatan) sebagai garis tegas. Klik sebuah desa tetap turun satu tingkat (provinsi → kab/kota → kecamatan → desa), sehingga navigasi berjenjang tidak berubah. Di tingkat nasional pilihan ini menunggu sampai provinsi dipilih.
+- **Wilayah Dimenangkan & Sorot:** Panel menghitung berapa desa (atau wilayah anak) yang dimenangkan setiap opsi, menjajarkannya dengan porsi suara, dan menandai desa tanpa poligon. Klik baris panel atau item legenda untuk menyorot unit milik opsi itu; unit lain meredup.
 - **Peta Interaktif GeoJSON Lokal:** Pemetaan presisi tinggi dengan pencocokan kode wilayah eksak melalui `properties.key`.
 - **Tampilan Cadangan Berbasis Kisi (*Grid Fallback*):** Otomatis menyajikan tata letak kisi (*grid*) jika data batas poligon pada tingkat wilayah terkait tidak tersedia.
 - **Beragam Mode Visualisasi Tematik:** Pilihan visualisasi peta pemenang, margin kemenangan, perolehan persentase suara kandidat/partai, serta tingkat partisipasi pemilih tervalidasi.
@@ -38,7 +40,9 @@ Untuk Pemilu 2024, hasil DPR RI, DPD, DPRD Provinsi, dan DPRD Kabupaten/Kota sud
 - **Penanganan Data Khusus & Transparan:** Mengakomodasi perolehan suara seri, data tidak tersedia, TPS dengan hasil kosong (*blank*), serta penandaan anomali data.
 - **Alat Bantu Lengkap:** Fitur pencarian cepat di semua tingkatan wilayah, navigasi rekam jejak (*breadcrumb*), *tooltip* interaktif, panel ringkasan analisis, dan tabel rekapitulasi perolehan suara.
 - **Kinerja Optimal & Ringan:** Pemuatan data perolehan suara tingkat desa per provinsi dan potongan geometri wilayah dilakukan sesuai kebutuhan (*on-demand*).
-- **Ekspor Data CSV (UTF-8):** Menyediakan fitur ekspor data sub-wilayah aktif, lengkap dengan indikator kelengkapan data, jumlah `blank-tps`, dan `outlier-vote-tps`.
+- **Ekspor Data CSV (UTF-8):** Menyediakan fitur ekspor data sub-wilayah aktif, lengkap dengan indikator kelengkapan data, jumlah `blank-tps`, dan `outlier-vote-tps`. Pada mode Batas Desa, tabel dan CSV memuat seluruh desa beserta kolom kabupaten/kota dan kecamatan.
+- **Unduh PNG Siap-Laporan:** Satu gambar beresolusi 2× berisi judul wilayah, keterangan warna, peta seperti yang tampak (termasuk zoom dan sorot), legenda, dan catatan sumber.
+- **Tautan yang Dapat Dibagikan:** Bilah alamat selalu memuat tampilan aktif; tombol *Salin tautan* menyalinnya untuk dikirim atau dibuka kembali.
 
 Pintasan keyboard:
 
@@ -47,6 +51,7 @@ Pintasan keyboard:
 | `T` | Berpindah tahun pemilu (2019 ↔ 2024) |
 | `1`–`5` | Memilih jenis kontes pemilihan (2019 hanya memiliki empat tab) |
 | `/` | Fokus ke kolom pencarian |
+| `D` | Berganti mode batas (Berjenjang ↔ Desa) |
 | `Esc` atau `Backspace` | Kembali ke tingkat wilayah di atasnya |
 
 ## Audit Data Pemilu 2019
@@ -148,8 +153,11 @@ Seluruh data geometri peta dimuat langsung dari dalam repositori tanpa mengunduh
 | `<gisDir>/kab/<provinceKey>.json` | Tingkat Kabupaten/Kota dalam satu provinsi |
 | `<gisDir>/kec/<regencyKey>.json` | Tingkat Kecamatan dalam satu kabupaten/kota |
 | `<gisDir>/desa/<districtKey>.json` | Tingkat Kelurahan/Desa dalam satu kecamatan |
+| `<gisDir>/desaprov/<provinceKey>.json` | Seluruh Kelurahan/Desa satu provinsi, untuk mode Batas Desa |
 
 Setiap fitur wilayah dalam berkas GeoJSON wajib memiliki atribut `properties.key` yang cocok persis dengan kode pada hierarki data tahun terkait. Sistem tidak menggunakan pencocokan perkiraan (*fuzzy matching*) maupun indeks nama lama.
+
+Berkas `desaprov/` adalah turunan `desa/`: fitur desa satu provinsi digabung ke satu berkas dan disederhanakan sekali lagi pada toleransi 0,001°, karena pada zoom provinsi dan kabupaten satu desa hanya selebar beberapa piksel. Satu permintaan per provinsi menggantikan ratusan permintaan per kecamatan (666 untuk Jawa Timur). Tampilan kecamatan tetap memakai berkas `desa/` yang lebih rinci. Ukurannya 55,6 MB untuk 2024 (terbesar Jawa Timur, 4,9 MB untuk 8.494 desa) dan 43,2 MB untuk 2019.
 
 ### Pemetaan 2019: Rekonstruksi Historis
 
@@ -209,10 +217,10 @@ Aplikasi ini disajikan untuk produksi melalui GitHub Pages langsung dari direkto
 Repositori ini telah melacak seluruh berkas data yang dibutuhkan saat aplikasi berjalan (*runtime*):
 
 - `data/election2019/*.json` dan `data/election2024/*.json`;
-- `data/gis/{kab,kec,desa}/*.json`; serta
-- `data/gis2024/{kab,kec,desa}/*.json`.
+- `data/gis/{kab,kec,desa,desaprov}/*.json`; serta
+- `data/gis2024/{kab,kec,desa,desaprov}/*.json`.
 
-Untuk dataset 2019, berkas ini mencakup 35 *chunk* perolehan suara, 34 *chunk* kabupaten/kota, 514 *chunk* kecamatan, dan 7.201 *chunk* desa. Untuk dataset 2024 mencakup 39 *chunk* suara, 39 *chunk* kabupaten/kota, 643 *chunk* kecamatan, dan 7.406 *chunk* desa. Ukuran setiap berkas berada jauh di bawah batas 100 MB. Jangan menghapus berkas-berkas tersebut dari Git ataupun memindahkannya ke Git LFS agar GitHub Pages dapat menyajikan berkas JSON secara langsung. Sebaliknya, pastikan untuk tidak meng-commit direktori seperti `.venv/`, `SHP GIS/`, `data/gis/_build/`, `data/gis2024_stage/`, `data/_stage2024/`, atau `data/gis_broken_*` karena direktori tersebut hanya berupa dependensi lokal, berkas mentah, atau area penampungan sementara (*staging*).
+Untuk dataset 2019, berkas ini mencakup 35 *chunk* perolehan suara, 34 *chunk* kabupaten/kota, 514 *chunk* kecamatan, dan 7.201 *chunk* desa. Untuk dataset 2024 mencakup 39 *chunk* suara, 39 *chunk* kabupaten/kota, 643 *chunk* kecamatan, dan 7.406 *chunk* desa. Ukuran setiap berkas berada jauh di bawah batas 100 MB. Jangan menghapus berkas-berkas tersebut dari Git ataupun memindahkannya ke Git LFS agar GitHub Pages dapat menyajikan berkas JSON secara langsung. Sebaliknya, pastikan untuk tidak meng-commit direktori seperti `.venv/`, `SHP GIS/`, `data/gis/_build/`, `data/gis2024_stage/`, `data/gis2024_stage_desaprov/`, `data/gis_stage_desaprov/`, `data/_stage2024/`, atau `data/gis_broken_*` karena direktori tersebut hanya berupa dependensi lokal, berkas mentah, atau area penampungan sementara (*staging*).
 
 Setelah memastikan seluruh proses pembangunan data dan pengujian berhasil, lakukan *commit* dan *push*:
 
@@ -279,6 +287,17 @@ python build_gis_2024.py
 
 Proses *build* terakhir membutuhkan waktu **5.321 detik (89 menit)** pada prosesor *single-thread* karena membaca *shapefile* sebesar 2,1 GB per kabupaten dan menggabungkan (*dissolve*) 83.529 poligon desa ke tingkat di atasnya. Provinsi kepulauan seperti Nusa Tenggara Barat dan Sulawesi Tengah menghabiskan porsi waktu terbesar. Hasil *build* divalidasi secara ketat sebelum dipasang: setiap kecamatan wajib memiliki berkas desa, setiap kabupaten wajib memiliki berkas kecamatan, dan setiap kode fitur peta wajib terdaftar pada struktur hierarki.
 
+### Memproses Berkas Desa per Provinsi (Mode Batas Desa)
+
+Jalankan setelah GIS tahun terkait selesai dibangun. Skrip membaca berkas `desa/` yang sudah terpasang (bukan *shapefile*), sehingga selesai dalam sekitar 30 detik per tahun:
+
+```powershell
+python build_desa_provinsi.py --gis-dir data/gis2024 --hierarchy data/wilayah2024.json
+python build_desa_provinsi.py --gis-dir data/gis --hierarchy data/wilayah.json
+```
+
+Keluaran ditulis ke direktori *staging* `data/<gis>_stage_desaprov/`, diverifikasi (satu berkas per provinsi hierarki; himpunan desa setiap berkas identik dengan gabungan `desa/` provinsinya), lalu dipasang ke `<gisDir>/desaprov/`. Provinsi tanpa poligon, seperti Luar Negeri, tetap mendapat berkas kosong.
+
 ## Pengujian dan Validasi Data
 
 Jalankan rangkaian pemeriksaan berikut untuk memastikan integritas data dan antarmuka:
@@ -296,7 +315,7 @@ python tests/test_http_smoke.py
 
 Pengujian data 2019 memuat seluruh 35 *chunk* provinsi, memverifikasi bahwa penjumlahan data desa identik dengan agregat kecamatan, mencocokkan *hash* 1.954 berkas *scrape* KPU lama dan 35 CSV Pilpres, menghitung ulang *checksum* 8.011 berkas struktur hierarki dari penyimpanan lokal, memastikan seluruh baris data terpetakan ke ID resmi KPU, serta memvalidasi ketiadaan kontes tertentu. Sementara itu, pengujian GIS 2019 memeriksa 7.750 berkas GeoJSON, memverifikasi relasi kode wilayah dan induknya, keabsahan 88.795 geometri poligon, tahun rilis poligon BIG, serta konsistensi daftar wilayah tanpa data geometri.
 
-Skrip `tests/test_2024_artifacts.py` menghitung ulang seluruh perolehan suara 2024 dari *chunk* desa dan membandingkannya dengan agregat kecamatan serta laporan audit, memverifikasi bahwa format kode desa sesuai standar Kemendagri, lalu memvalidasi seluruh berkas GeoJSON 2024 (kesesuaian berkas dengan hierarki, relasi kode induk, keabsahan geometri, *bounding box*, dan daftar wilayah tanpa peta). Opsi `--skip-gis` dapat digunakan jika Anda hanya ingin menguji data perolehan suara.
+Skrip `tests/test_2024_artifacts.py` menghitung ulang seluruh perolehan suara 2024 dari *chunk* desa dan membandingkannya dengan agregat kecamatan serta laporan audit, memverifikasi bahwa format kode desa sesuai standar Kemendagri, lalu memvalidasi seluruh berkas GeoJSON 2024 (kesesuaian berkas dengan hierarki, relasi kode induk, keabsahan geometri, *bounding box*, dan daftar wilayah tanpa peta). Berkas `desaprov/` kedua tahun diperiksa terpisah: setiap berkas harus memuat persis desa yang digambar oleh `desa/` provinsinya, dengan geometri yang tetap valid setelah penyederhanaan tambahan. Opsi `--skip-gis` dapat digunakan jika Anda hanya ingin menguji data perolehan suara.
 
 Uji transaksi memverifikasi mekanisme *commit* dan *rollback* direktori saat proses instalasi berhasil maupun gagal di tengah jalan. *Smoke test* menjalankan server HTTP lokal untuk menguji aksesibilitas halaman HTML, *stylesheet*, metadata, *chunk* suara, serta GeoJSON untuk **kedua tahun pemilu**. Uji regresi Node.js memeriksa fungsionalitas pemuat data frontend untuk 2019 dan 2024, termasuk kepatuhan skema, urutan opsi pemilihan, agregasi suara, pencocokan kode GIS, penanganan data kosong, kondisi seri, konsistensi warna kandidat, serta memastikan tidak ada sisa pustaka atlas lama.
 
@@ -319,6 +338,7 @@ Uji transaksi memverifikasi mekanisme *commit* dan *rollback* direktori saat pro
 | `build_gis_data.py` | Skrip pengolahan, penyelarasan kode wilayah, dan audit data spasial GIS 2019 |
 | `build_2024_data.py` | Skrip penyusunan data dan audit hasil Pilpres, DPR RI, DPRD Provinsi, serta DPRD Kabupaten/Kota 2024 dari data Sirekap |
 | `build_gis_2024.py` | Skrip agregasi (*dissolve*) batas desa Kemendagri 2026 dan audit GIS 2024 |
+| `build_desa_provinsi.py` | Skrip penggabungan desa per provinsi (`desaprov/`) untuk mode Batas Desa, kedua tahun |
 | `requirements.txt` | Daftar dependensi pustaka Python untuk *data pipeline* |
 | `tools/inspect_shp.py` | Utilitas CLI untuk memeriksa skema dan sampel data *shapefile* |
 | `tools/legacy/` | Utilitas pemrosesan lama (tidak digunakan dalam alur *build* aktif) |

@@ -160,6 +160,51 @@ def public_paths() -> list[Path]:
     return sorted(paths)
 
 
+def check_province_villages(names, parents, levels, provinces: set[str], villages: set[str]) -> None:
+    """``desaprov/<provinsi>.json`` for the "Batas: Desa" map mode.
+
+    Derived from the ``desa/`` chunks by ``build_desa_provinsi.py``, so each
+    domestic province file holds exactly the villages its chunks draw. The
+    overseas province also gets a file, and it must be empty. The layer is not
+    part of ``public_paths()`` because the audit tree hash covers the source
+    layers only."""
+
+    folder = GIS / "desaprov"
+    assert folder.is_dir(), f"folder GIS hilang: {folder}"
+    paths = sorted(folder.glob("*.json"))
+    stems = {path.stem for path in paths}
+    assert provinces <= stems, f"desaprov: provinsi tanpa berkas: {sorted(provinces - stems)[:5]}"
+    expected: dict[str, set[str]] = {province: set() for province in stems}
+    for key in villages:
+        expected[parents[parents[parents[key]]]].add(key)
+    total = 0
+    for path in paths:
+        relative = path.relative_to(GIS).as_posix()
+        data = load_json(path)
+        assert data.get("type") == "FeatureCollection", f"{relative}: bukan FeatureCollection"
+        if path.stem not in provinces:
+            assert data["features"] == [], f"{relative}: provinsi luar negeri tidak boleh berpoligon"
+            continue
+        keys: set[str] = set()
+        for index, feature in enumerate(data["features"]):
+            context = f"{relative} feature {index}"
+            properties = feature.get("properties")
+            assert isinstance(properties, dict), f"{context}: properties harus object"
+            key = properties.get("key")
+            assert key in names and levels[key] == "village", f"{context}: bukan desa: {key}"
+            assert properties.get("level") == "village", f"{context}: properties.level salah"
+            assert properties.get("name") == names[key], f"{context}: nama bukan nama hierarchy"
+            assert key not in keys, f"{context}: key duplikat {key}"
+            keys.add(key)
+            validate_geometry(feature.get("geometry"), f"{context} ({key})")
+        assert keys == expected[path.stem], (
+            f"{relative}: desa tidak sama dengan chunk desa provinsinya; "
+            f"hilang={sorted(expected[path.stem] - keys)[:5]}, asing={sorted(keys - expected[path.stem])[:5]}"
+        )
+        total += len(keys)
+    assert total == len(villages)
+
+
 def main() -> None:
     names, parents, levels = hierarchy()
     expected_by_level = {
@@ -375,6 +420,8 @@ def main() -> None:
     assert outputs.get("json_files") == len(public_paths())
     assert outputs.get("bytes") == byte_count
     assert outputs.get("tree_sha256") == digest.hexdigest()
+
+    check_province_villages(names, parents, levels, expected_by_level["province"], seen["village"])
 
     print(
         "test_gis_integrity.py: hierarchy keys, files, audit, and all "

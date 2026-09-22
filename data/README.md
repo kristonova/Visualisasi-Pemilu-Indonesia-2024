@@ -10,6 +10,7 @@ Dataset Pemilu 2019 dan 2024 dikelola secara **terpisah dan independen**. Saat p
 - `wilayah.json`: Struktur hierarki wilayah administratif beserta pemetaan kode resmi KPU 2019.
 - `election2019.json` dan `election2019/*.json`: Metadata kontes pemilihan, agregasi suara tingkat nasional dan daerah, serta pecahan (*chunk*) perolehan suara per provinsi.
 - `gis/provinsi.json`, `gis/kab/`, `gis/kec/`, dan `gis/desa/`: Berkas GeoJSON batas wilayah administratif yang diselaraskan dengan hierarki data 2019.
+- `gis/desaprov/`: Seluruh desa satu provinsi dalam satu berkas (turunan `gis/desa/`) untuk mode Batas Desa.
 - `audit2019.json` dan `gis/audit2019.json`: Inventaris berkas data, nilai *checksum*, ringkasan cakupan wilayah, serta log validasi integritas data.
 
 ### Karakteristik & Catatan Data
@@ -23,6 +24,7 @@ Dataset Pemilu 2019 dan 2024 dikelola secara **terpisah dan independen**. Saat p
 - `wilayah2024.json`: Struktur hierarki 39 wilayah tingkat satu (38 provinsi serta wilayah Luar Negeri) tanpa awalan kunci (`key_prefix`).
 - `election2024.json` dan `election2024/*.json`: Metadata kontes, data agregat tingkat kecamatan, serta pecahan (*chunk*) perolehan suara tingkat desa per provinsi. Setiap baris wilayah memuat satu slot per kontes sesuai urutan larik `contests`; slot bernilai `null` menandakan kontes tersebut tidak memiliki rekaman di wilayah itu.
 - `gis2024/provinsi.json`, `gis2024/kab/`, `gis2024/kec/`, dan `gis2024/desa/`: Berkas GeoJSON batas wilayah administratif hasil penggabungan poligon desa Kemendagri.
+- `gis2024/desaprov/`: Seluruh desa satu provinsi dalam satu berkas (turunan `gis2024/desa/`) untuk mode Batas Desa.
 - `audit2024.json` dan `gis2024/audit2024.json`: Inventaris berkas sumber, nilai *checksum*, rekapitulasi anomali, serta log validasi spasial.
 
 ### Karakteristik & Catatan Data
@@ -43,5 +45,6 @@ Jangan menyunting berkas JSON secara manual. Seluruh data harus dikompilasi ulan
 
 - **Pemilu 2019:** Jalankan `build_2019_data.py` (data tabel/perolehan suara) dan `build_gis_data.py` (data spasial).
 - **Pemilu 2024:** Jalankan `build_2024_data.py` (data tabel/perolehan suara, seluruh kontes sekaligus) dan `build_gis_2024.py` (data spasial).
+- **Kedua tahun:** Setelah data spasial dibangun, jalankan `build_desa_provinsi.py` untuk memperbarui `desaprov/`.
 
 Setelah proses kompilasi data selesai, selalu jalankan seluruh pengujian di dalam direktori `tests/` guna memastikan keutuhan data, konsistensi hierarki wilayah, serta validitas geometri peta.

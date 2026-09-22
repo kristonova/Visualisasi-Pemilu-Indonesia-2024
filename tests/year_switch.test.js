@@ -15,9 +15,9 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 
 const IDS = ['tabs', 'yearseg', 'yearnote', 'brandyear', 'modeseg', 'focussel', 'focuslab',
-  'viewinfo', 'viewport', 'map', 'gridwrap', 'locator', 'loclab', 'locsvg', 'zoombtns',
+  'batasseg', 'viewinfo', 'viewport', 'map', 'gridwrap', 'locator', 'loclab', 'locsvg', 'zoombtns',
   'zin', 'zout', 'zrst', 'loading', 'legend', 'panel', 'crumbs', 'tip', 'q', 'qr',
-  'ttoggle', 'tcsv', 'srcnote', 'tablewrap', 'dtable'];
+  'ttoggle', 'tcsv', 'tpng', 'tlink', 'srcnote', 'tablewrap', 'dtable'];
 
 // Setiap id di atas harus benar-benar ada di kedua entry HTML, kalau tidak stub
 // ini akan menyembunyikan elemen yang lupa ditambahkan ke halaman.
@@ -213,6 +213,85 @@ const nameChain = node => {
   await app.selectYear('2024');
   S.pemilu = pemiluBefore;
   S.mode = modeBefore;
+
+  // ── mode Batas Desa ───────────────────────────────────────────────
+  // Preferensi Desa menunggu di tingkat nasional, lalu berlaku begitu sebuah
+  // provinsi dipilih: seluruh desanya diwarnai dari satu berkas desaprov,
+  // dan panel, legenda, serta tabel ikut membaca desa.
+  const contestBefore = S.pemilu, colorBefore = S.mode;
+  S.pemilu = 'pilpres';
+  S.mode = 'winner';
+  await app.select(S.root);
+  await app.setBatas('desa');
+  assert.strictEqual(S.batas, 'desa');
+  assert.ok(!app.desaView(), 'nasional tidak menggambar desa');
+  assert.ok(/value="desa"[^>]*disabled/.test(elements.get('batasseg').innerHTML),
+    'nasional: pilihan Desa harus nonaktif');
+  assert.ok(elements.get('viewinfo').textContent.startsWith('Batas desa tersedia'));
+  assert.strictEqual(S.mapViewKey, 'prov');
+
+  const jateng = S.root.anak.find(node => node.name === 'JAWA TENGAH');
+  await app.select(jateng);
+  assert.ok(app.desaView(), 'provinsi dalam mode Desa harus menggambar desa');
+  assert.strictEqual(S.mapViewKey, `dprov:${jateng.key}`);
+  assert.ok(requests.includes(`data/gis2024/desaprov/${jateng.key}.json`), 'berkas desa provinsi harus dimuat');
+  assert.strictEqual(app.activeUnits().length, app.leavesOf(jateng).length,
+    'unit peta harus seluruh desa provinsi');
+  assert.ok(elements.get('panel').innerHTML.includes('Desa dimenangkan'));
+  assert.ok(elements.get('legend').innerHTML.includes('Batas kab/kota'));
+  assert.ok(elements.get('legend').innerHTML.includes('per desa'));
+  assert.ok(elements.get('dtable').innerHTML.includes('<th>Kab/Kota</th>'), 'tabel desa memuat kolom kab/kota');
+  assert.ok(elements.get('dtable').innerHTML.includes('Tampilkan semua'), 'tabel desa dibatasi 200 baris');
+  assert.ok(elements.get('ttoggle').textContent.startsWith('Tabel desa'));
+  assert.ok(elements.get('viewinfo').textContent.startsWith('Peta per desa'));
+
+  const jatengKab = jateng.anak[0];
+  await app.select(jatengKab);
+  assert.strictEqual(S.mapViewKey, `dkab:${jatengKab.key}`);
+  assert.ok(elements.get('legend').innerHTML.includes('Batas kecamatan'));
+  assert.ok(elements.get('dtable').innerHTML.includes('<th>Kecamatan</th>'));
+
+  // Sorot: klik pertama menyorot, klik kedua melepas.
+  const leader = app.winnerOf(jatengKab);
+  await app.setSorot(leader);
+  assert.strictEqual(S.sorot, leader);
+  assert.ok(elements.get('panel').innerHTML.includes('aria-pressed="true"'), 'baris opsi tersorot harus aktif');
+  assert.ok(elements.get('legend').innerHTML.includes('aria-pressed="true"'));
+  await app.setSorot(leader);
+  assert.strictEqual(S.sorot, null);
+
+  // Tautan memuat tampilan yang sama dan dapat dibaca kembali.
+  const hash = app.stateHash();
+  assert.strictEqual(hash, `#2024/pilpres/${jatengKab.key}?warna=pemenang&batas=desa`);
+  const parsed = app.parseHash(hash);
+  assert.strictEqual(parsed.key, jatengKab.key);
+  assert.strictEqual(parsed.batas, 'desa');
+  assert.strictEqual(parsed.warna, 'pemenang');
+  assert.strictEqual(app.parseHash('#%E0%A4%A'), null, 'hash rusak diabaikan');
+
+  // Seluruh kontes dan mode pada ribuan desa: stub innerHTML menolak NaN/undefined.
+  for (const contest of ['pilpres', 'dpr', 'dpd', 'dprdprov', 'dprdkab']) {
+    for (const mode of ['winner', 'margin', 'share', 'turnout']) {
+      S.pemilu = contest;
+      S.mode = mode;
+      await app.select(jateng);
+    }
+  }
+  S.pemilu = 'pilpres';
+  S.mode = 'winner';
+  await app.select(jateng);
+
+  // 2019 memakai folder GIS-nya sendiri; preferensi Desa ikut berpindah tahun.
+  await app.selectYear('2019');
+  assert.ok(app.desaView(), '2019: mode Desa tetap aktif setelah tukar tahun');
+  assert.ok(requests.some(url => /^data\/gis\/desaprov\/P[^/]+\.json$/.test(url)),
+    '2019: berkas desa provinsi dibaca dari data/gis');
+  await app.selectYear('2024');
+  await app.setBatas('berjenjang');
+  assert.ok(!app.desaView());
+  assert.strictEqual(S.mapViewKey, `kab:${jateng.key}`, 'kembali berjenjang memakai peta kab/kota');
+  S.pemilu = contestBefore;
+  S.mode = colorBefore;
 
   // ── wilayah tanpa geometri jatuh ke grid ──────────────────────────
   const overseas = S.root.anak.find(node => node.name.includes('LUAR NEGERI'));

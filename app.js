@@ -191,9 +191,12 @@ let PEMILU = [];
 const S = {
   D: null, tahun: null, bundles: new Map(), active: null,
   pemilu: null, mode: 'margin', fokus: 0, sel: null, root: null,
+  // `batas` adalah preferensi pengguna yang bertahan lintas wilayah dan tahun;
+  // `sorot` menyorot unit peta yang dimenangkan satu opsi.
+  batas: 'berjenjang', sorot: null, tableAll: false,
   nodes: new Map(), index: [], results: new Map(), contestsById: new Map(),
   statNames: [], statIndex: new Map(), election: null, sourceSummary: null,
-  geoProv: null, geoKab: new Map(), geoKec: new Map(), geoDesa: new Map(),
+  geoProv: null, geoKab: new Map(), geoKec: new Map(), geoDesa: new Map(), geoDesaProv: new Map(),
   leafLoads: new Map(), leafErrors: new Map(), sort: { k: 'v', d: -1 },
   mapViewKey: null, mapViewNodeKey: null, mapCollection: null, hasGeoView: false
 };
@@ -204,15 +207,15 @@ const S = {
    diambil ulang dari jaringan. */
 const BUNDLE_FIELDS = ['D', 'pemilu', 'sel', 'root', 'nodes', 'index', 'results',
   'contestsById', 'statNames', 'statIndex', 'election', 'sourceSummary',
-  'geoProv', 'geoKab', 'geoKec', 'geoDesa', 'leafLoads', 'leafErrors'];
+  'geoProv', 'geoKab', 'geoKec', 'geoDesa', 'geoDesaProv', 'leafLoads', 'leafErrors'];
 
 function blankBundle(D) {
   return {
     D, pemilu: null, sel: null, root: null, nodes: new Map(), index: [],
     results: new Map(), contestsById: new Map(), statNames: [], statIndex: new Map(),
     election: null, sourceSummary: null, geoProv: null, geoKab: new Map(),
-    geoKec: new Map(), geoDesa: new Map(), leafLoads: new Map(), leafErrors: new Map(),
-    PEMILU: []
+    geoKec: new Map(), geoDesa: new Map(), geoDesaProv: new Map(),
+    leafLoads: new Map(), leafErrors: new Map(), PEMILU: []
   };
 }
 function saveBundle(bundle) {
@@ -540,8 +543,11 @@ function turnoutOf(node) {
   const users = statOf(result, 'total-pengguna');
   return result && result.present && validated > 0 && registered > 0 ? users / registered : null;
 }
+/* Unit yang diwarnai peta: desa di mode Batas Desa, selain itu wilayah anak.
+   Skala, legenda, hitungan menang, dan tabel membaca daftar yang sama. */
 function activeUnits() {
   if (!S.sel) return [];
+  if (desaView()) return leavesOf(S.sel);
   return S.sel.anak.length ? S.sel.anak : [S.sel];
 }
 function updateScale() {
@@ -557,7 +563,12 @@ function updateScale() {
     if (!(total > 0)) return null;
     return national ? topShareValue(node) : votes[S.fokus] / total;
   }).filter(value => value != null);
-  S.sDom = [0, Math.max(.08, d3.max(shares) || .5)];
+  // Ribuan desa selalu memuat beberapa desa kecil berporsi hampir 100%; puncak
+  // skala desa memakai kuantil 98% agar ramp tidak pudar karena segelintir desa.
+  const top = desaView() && shares.length > 50
+    ? d3.quantile(shares.slice().sort(d3.ascending), .98)
+    : d3.max(shares);
+  S.sDom = [0, Math.max(.08, top || .5)];
 }
 function colorOf(node) {
   if (S.mode === 'turnout') {
@@ -609,6 +620,7 @@ function renderTabs() {
   $('#tabs').querySelectorAll('.tab').forEach(button => {
     button.onclick = () => {
       S.pemilu = button.dataset.e;
+      S.sorot = null;
       S.fokus = Math.min(S.fokus, Math.max(0, opsi().length - 1));
       if (typeof S.sort.k === 'number' && S.sort.k >= opsi().length) {
         S.sort = { k: 'v', d: -1 };
@@ -639,35 +651,61 @@ function renderModes() {
     $('#focussel').onchange = event => { S.fokus = +event.target.value; renderAll(); };
   }
 }
-function renderLegend() {
-  const O = opsi(), legend = $('#legend'), level = ANAK[S.sel.lv] || LEVELS[S.sel.lv];
+/* Mode Batas: "Berjenjang" menggambar wilayah anak; "Desa" menggambar seluruh
+   desa provinsi/kab terpilih dengan batas anak sebagai garis tegas.  Pilihan
+   ini preferensi: di tingkat nasional ia menunggu sampai provinsi dipilih. */
+function renderBatas() {
+  const seg = $('#batasseg');
+  if (!seg || !S.sel) return;
+  const available = S.sel.lv >= 1 && desaAvailable(S.sel);
+  const hint = S.sel.lv === 0 ? 'Pilih provinsi untuk melihat batas desa' : 'Wilayah ini tidak memiliki poligon desa';
+  seg.innerHTML = [['berjenjang', 'Berjenjang'], ['desa', 'Desa']].map(([key, label]) => {
+    const disabled = key === 'desa' && !available;
+    return `<label class="seg-opt"${disabled ? ` title="${esc(hint)}"` : ''}><input type="radio" name="batas" value="${key}"
+      ${key === S.batas ? 'checked' : ''}${disabled ? ' disabled' : ''}>${label}</label>`;
+  }).join('');
+  seg.querySelectorAll('input').forEach(input => {
+    input.onchange = () => { if (input.checked) setBatas(input.value); };
+  });
+}
+function setBatas(value) {
+  if (S.batas === value) return Promise.resolve();
+  S.batas = value;
+  // select() memuat berkas desa provinsi dan hasil desa bila belum ada.
+  return select(S.sel);
+}
+function setSorot(index) {
+  S.sorot = S.sorot === index ? null : index;
+  return renderAll();
+}
+/* Nama unit peta untuk label: "desa", "kab/kota", ... */
+function unitNoun(units = activeUnits()) {
+  const level = units.length ? units[0].lv : S.sel.lv;
+  return ['wilayah', 'provinsi', 'kab/kota', 'kecamatan', 'desa'][level] || 'wilayah';
+}
+/* Isi legenda sebagai data, dipakai legenda halaman dan gambar PNG. */
+function legendModel() {
+  const O = opsi(), noun = unitNoun();
+  const noData = { warna: NO_DATA, label: 'Tanpa perolehan' };
+  const line = desaView() ? (S.sel.lv === 1 ? 'Batas kab/kota' : 'Batas kecamatan') : null;
+  const ramp = (from, to, lo, hi) => ({ lo, hi, colors: d3.range(9).map(i => d3.interpolateRgb(from, to)(i / 8)) });
   if (S.mode === 'turnout') {
     const [a, b] = S.tDom || [.55, .9];
-    legend.innerHTML = `<span class="modelab">Partisipasi tervalidasi per ${esc(level.toLowerCase())}</span><span>${pct(a, 0)}</span>
-      <span class="ramp">${d3.range(9).map(i => `<i style="background:${d3.interpolateRgb('#f6f4f3', '#201e1d')(i / 8)}"></i>`).join('')}</span><span>${pct(b, 0)}</span>
-      <span class="lgi"><i class="sw" style="background:${NO_DATA}"></i>Tanpa metadata valid</span>`;
-    return;
+    return { title: `Partisipasi tervalidasi per ${noun}`, ramp: ramp('#f6f4f3', '#201e1d', pct(a, 0), pct(b, 0)),
+      items: [{ warna: NO_DATA, label: 'Tanpa metadata valid' }], line };
   }
-  const noData = `<span class="lgi"><i class="sw" style="background:${NO_DATA}"></i>Tanpa perolehan</span>`;
   if (topShareView()) {
     const max = (S.sDom || [0, .75])[1];
-    const label = S.mode === 'margin'
+    const title = S.mode === 'margin'
       ? 'Selisih calon teratas atas peringkat kedua di provinsinya'
       : 'Porsi suara calon teratas di provinsinya';
-    legend.innerHTML = `<span class="modelab">${label}</span><span>0%</span>
-      <span class="ramp">${d3.range(9).map(i => `<i style="background:${d3.interpolateRgb(BGT, TOP_SHARE_COLOR)(i / 8)}"></i>`).join('')}</span><span>${pct(max, 0)}</span>${noData}`;
-    return;
+    return { title, ramp: ramp(BGT, TOP_SHARE_COLOR, '0%', pct(max, 0)), items: [noData], line };
   }
   const shown = shownIndexes(O);
-  if (!shown.length) {
-    legend.innerHTML = `<span class="modelab">Surat suara ${esc(election().nama)} tidak dibagikan di wilayah ini</span>${noData}`;
-    return;
-  }
+  if (!shown.length) return { title: `Surat suara ${election().nama} tidak dibagikan di wilayah ini`, items: [noData], line };
   if (S.mode === 'share') {
     const option = O[S.fokus], max = (S.sDom || [0, .75])[1];
-    legend.innerHTML = `<span class="modelab">Perolehan ${esc(option.pendek)}</span><span>0%</span>
-      <span class="ramp">${d3.range(9).map(i => `<i style="background:${d3.interpolateRgb(BGT, option.warna)(i / 8)}"></i>`).join('')}</span><span>${pct(max, 0)}</span>${noData}`;
-    return;
+    return { title: `Perolehan ${option.pendek} per ${noun}`, ramp: ramp(BGT, option.warna, '0%', pct(max, 0)), items: [noData], line };
   }
   // Legenda DPD hanya memuat calon yang unggul di wilayah yang tampak; 54
   // calon Jawa Barat tidak muat, dan calon yang tidak unggul tidak berwarna.
@@ -677,19 +715,41 @@ function renderLegend() {
     listed = shown.filter(index => leaders.has(index) && O[index].warna !== OTHER_CANDIDATE);
     others = [...leaders].some(index => O[index].warna === OTHER_CANDIDATE);
   }
-  legend.innerHTML = `<span class="modelab">${S.mode === 'winner' ? 'Pemenang' : 'Pemenang · intensitas = margin'}</span>` +
-    listed.map(index => `<span class="lgi"><i class="sw" style="background:${O[index].warna}"></i>${esc(O[index].no)} ${esc(O[index].pendek)}</span>`).join('') +
-    (others ? `<span class="lgi"><i class="sw" style="background:${OTHER_CANDIDATE}"></i>Calon di luar 10 besar provinsi</span>` : '') +
-    `<span class="lgi"><i class="sw" style="background:${TIE_COLOR}"></i>Seri</span>${noData}`;
+  return {
+    title: `${S.mode === 'winner' ? 'Pemenang' : 'Pemenang · intensitas = margin'} per ${noun}`,
+    items: [
+      ...listed.map(index => ({ warna: O[index].warna, label: `${O[index].no} ${O[index].pendek}`, opsi: index })),
+      ...(others ? [{ warna: OTHER_CANDIDATE, label: 'Calon di luar 10 besar provinsi' }] : []),
+      { warna: TIE_COLOR, label: 'Seri' }, noData
+    ],
+    line
+  };
+}
+function renderLegend() {
+  const model = legendModel(), legend = $('#legend');
+  // Item opsi adalah tombol sorot: klik sekali menyorot, klik lagi melepas.
+  const item = entry => entry.opsi != null
+    ? `<button class="lgi lgb" data-o="${entry.opsi}" aria-pressed="${S.sorot === entry.opsi}" title="Sorot ${esc(unitNoun())} yang dimenangkan ${esc(entry.label)}"><i class="sw" style="background:${entry.warna}"></i>${esc(entry.label)}</button>`
+    : `<span class="lgi"><i class="sw" style="background:${entry.warna}"></i>${esc(entry.label)}</span>`;
+  legend.innerHTML = `<span class="modelab">${esc(model.title)}</span>` +
+    (model.ramp ? `<span>${model.ramp.lo}</span><span class="ramp">${model.ramp.colors.map(color => `<i style="background:${color}"></i>`).join('')}</span><span>${model.ramp.hi}</span>` : '') +
+    model.items.map(item).join('') +
+    (model.line ? `<span class="lgi"><i class="ln"></i>${esc(model.line)}</span>` : '');
+  legend.classList.toggle('sorot', S.sorot != null);
+  legend.querySelectorAll('[data-o]').forEach(button => { button.onclick = () => setSorot(+button.dataset.o); });
 }
 
 /* ── GeoJSON lokal berbasis properties.key ───────────────────────── */
-let projection, path, zoom, svg, gLayer, gRegions, dims = [0, 0];
+let projection, path, zoom, svg, gLayer, gRegions, gOutline, dims = [0, 0];
+// Koleksi dan ukuran yang atribut `d`-nya sudah terhitung; selama keduanya
+// sama, ganti kontes, mode, atau sorot cukup mewarnai ulang ribuan path.
+let drawnPaths = null;
 function initMap() {
   svg = d3.select('#map');
   svg.selectAll('*').remove();
   gLayer = svg.append('g');
   gRegions = gLayer.append('g');
+  gOutline = gLayer.append('g');
   zoom = d3.zoom().scaleExtent([1, 260]).on('zoom', event => {
     // Gestur pengguna membatalkan animasi drill-down agar keduanya tidak
     // sama-sama menulis transform gLayer.
@@ -725,6 +785,7 @@ function viewportTransform(collection) {
    terpilih: memilih satu desa di dalam kecamatan yang sama tidak mengganti
    peta, jadi pan/zoom pengguna tidak boleh direset. */
 function viewIdentity(node) {
+  if (desaView(node)) return { id: `${node.lv === 1 ? 'dprov' : 'dkab'}:${node.key}`, key: node.key };
   if (node.lv === 0) return { id: 'prov', key: 'ID' };
   if (node.lv === 1) return { id: `kab:${node.key}`, key: node.key };
   if (node.lv === 2) return { id: `kec:${node.key}`, key: node.key };
@@ -781,36 +842,106 @@ async function loadGeoChunk(cache, key, folder) {
 const loadKab = P => P ? loadGeoChunk(S.geoKab, P.key, 'kab') : null;
 const loadKecGIS = K => K ? loadGeoChunk(S.geoKec, K.key, 'kec') : null;
 const loadDesaGIS = C => C ? loadGeoChunk(S.geoDesa, C.key, 'desa') : null;
+const loadDesaProv = P => P ? loadGeoChunk(S.geoDesaProv, P.key, 'desaprov') : null;
+
+/* ── mode Batas Desa ─────────────────────────────────────────────── */
+const geoKeySets = new WeakMap();
+function geoKeys(collection) {
+  if (!collection || !Array.isArray(collection.features)) return new Set();
+  let keys = geoKeySets.get(collection);
+  if (!keys) {
+    keys = new Set(collection.features.map(feature => String(feature.properties && feature.properties.key)));
+    geoKeySets.set(collection, keys);
+  }
+  return keys;
+}
+// Luar negeri tidak punya poligon di provinsi.json, jadi tidak punya peta desa.
+function desaAvailable(node) {
+  const P = provinceOf(node);
+  return !!P && geoKeys(S.geoProv).has(P.key);
+}
+function wantsDesa(node) {
+  return S.batas === 'desa' && !!node && (node.lv === 1 || node.lv === 2) && desaAvailable(node);
+}
+function leavesOf(node) {
+  if (!node._leaves) {
+    const out = [];
+    const walk = item => { if (item.lv === 4) out.push(item); else item.anak.forEach(walk); };
+    walk(node);
+    node._leaves = out;
+  }
+  return node._leaves;
+}
+const subsets = new WeakMap();
+function subsetFor(collection, prefix) {
+  let byPrefix = subsets.get(collection);
+  if (!byPrefix) subsets.set(collection, byPrefix = new Map());
+  if (!byPrefix.has(prefix)) {
+    byPrefix.set(prefix, {
+      type: 'FeatureCollection',
+      features: collection.features.filter(feature => String(feature.properties && feature.properties.key).startsWith(prefix))
+    });
+  }
+  return byPrefix.get(prefix);
+}
+/* Koleksi desa yang digambar untuk node, atau null bila mode Batas Desa tidak
+   berlaku atau berkas desa provinsinya gagal/kosong: peta lalu kembali ke
+   geometri berjenjang, dan seluruh panel ikut membaca wilayah anak. */
+function desaFill(node) {
+  if (!wantsDesa(node)) return null;
+  const desa = S.geoDesaProv.get(provinceOf(node).key);
+  if (!desa || desa instanceof Promise || !Array.isArray(desa.features)) return null;
+  const fill = node.lv === 1 ? desa : subsetFor(desa, node.key + '.');
+  return fill.features.length ? fill : null;
+}
+function desaView(node = S.sel) { return !!desaFill(node); }
 
 async function geoForSelection(node) {
-  if (node.lv === 0) return S.geoProv;
-  if (node.lv === 1) return loadKab(node);
-  if (node.lv === 2) return loadKecGIS(node);
-  return loadDesaGIS(ancestorAt(node, 3));
+  const desa = desaFill(node);
+  if (desa) {
+    const outline = node.lv === 1 ? await loadKab(node) : await loadKecGIS(node);
+    return { fill: desa, outline };
+  }
+  if (node.lv === 0) return { fill: S.geoProv };
+  if (node.lv === 1) return { fill: await loadKab(node) };
+  if (node.lv === 2) return { fill: await loadKecGIS(node) };
+  return { fill: await loadDesaGIS(ancestorAt(node, 3)) };
 }
 async function prepareSelection(node) {
   const tasks = [];
-  const P = provinceOf(node);
-  if (node.lv >= 3) tasks.push(loadLeafResults(P));
+  const P = provinceOf(node), desa = wantsDesa(node);
+  if (node.lv >= 3 || desa) tasks.push(loadLeafResults(P));
   if (node.lv === 1) tasks.push(loadKab(node));
   if (node.lv === 2) tasks.push(loadKecGIS(node), loadKab(P));
   if (node.lv >= 3) tasks.push(loadDesaGIS(ancestorAt(node, 3)), loadKab(P));
-  await Promise.all(tasks);
+  const cold = desa && !S.geoDesaProv.has(P.key);
+  if (desa) tasks.push(loadDesaProv(P));
+  const box = cold ? loadingBox(`Memuat batas ${fmt(leavesOf(P).length)} desa ${P.name}…`) : null;
+  try {
+    await Promise.all(tasks);
+  } finally {
+    if (box) box.remove();
+  }
 }
 async function drawGeo() {
   const selectedKey = S.sel.key;
-  const collection = await geoForSelection(S.sel);
+  const { fill: collection, outline } = await geoForSelection(S.sel);
   if (S.sel.key !== selectedKey) return false;
   if (!collection || !Array.isArray(collection.features) || !collection.features.length) {
     gRegions.selectAll('path').remove();
+    gOutline.selectAll('path').remove();
     // Tampilan grid memutus rangkaian peta; frame berikutnya mulai bersih.
     S.mapViewKey = null;
     S.mapViewNodeKey = null;
     S.mapCollection = null;
+    drawnPaths = null;
     return false;
   }
   const previousCollection = S.mapCollection, previousNodeKey = S.mapViewNodeKey;
-  fitProjection(collection);
+  const el = $('#viewport'), width = el.clientWidth || 800, height = el.clientHeight || 500;
+  const reproject = !drawnPaths || drawnPaths.collection !== collection
+    || drawnPaths.width !== width || drawnPaths.height !== height;
+  if (reproject) fitProjection(collection);
   const view = viewIdentity(S.sel);
   if (S.mapViewKey !== view.id) {
     S.mapViewKey = view.id;
@@ -818,17 +949,30 @@ async function drawGeo() {
     S.mapCollection = collection;
     enterView(relatedViews(previousNodeKey, view.key) ? previousCollection : null);
   }
-  gRegions.selectAll('path').data(collection.features).join('path')
+  svg.classed('dense', collection.features.length > 1500);
+  const regions = gRegions.selectAll('path').data(collection.features).join('path');
+  if (reproject) regions.attr('d', path);
+  drawnPaths = { collection, width, height };
+  const sorot = S.sorot;
+  regions
     .attr('class', feature => {
       const node = featureNode(feature);
-      return 'region' + (node && node.key === S.sel.key ? ' sel' : '');
+      return 'region' + (node && node.key === S.sel.key ? ' sel' : '')
+        + (sorot != null && node && winnerOf(node) !== sorot ? ' dim' : '');
     })
-    .attr('d', path)
     .attr('fill', feature => { const node = featureNode(feature); return node ? colorOf(node) : NO_DATA; })
     .style('pointer-events', feature => featureNode(feature) ? 'auto' : 'none')
-    .on('click', (event, feature) => { const node = featureNode(feature); if (node) select(node); })
+    // Klik selalu turun satu tingkat: desa di peta provinsi membuka kab/kotanya,
+    // sehingga mode Batas Desa tetap berjenjang seperti mode biasa.
+    .on('click', (event, feature) => {
+      const node = featureNode(feature);
+      if (node) select(ancestorAt(node, Math.min(S.sel.lv + 1, node.lv)));
+    })
     .on('mousemove', (event, feature) => { const node = featureNode(feature); if (node) tipShow(event, node); })
     .on('mouseleave', tipHide);
+  gOutline.selectAll('path').data(outline && Array.isArray(outline.features) ? outline.features : []).join('path')
+    .attr('class', 'bound')
+    .attr('d', path);
   return true;
 }
 function renderLocator() {
@@ -897,14 +1041,21 @@ function renderGrid() {
 
 /* ── tooltip dan panel analisis ──────────────────────────────────── */
 function tipElement() { return $('#tip'); }
+/* Desa pada peta provinsi atau kab/kota: sebut kecamatan dan kab/kotanya. */
+function tipContext(node) {
+  if (!S.sel || node.lv <= S.sel.lv + 1) return '';
+  return chain(node).slice(S.sel.lv + 1, -1).reverse()
+    .map(item => item.lv === 3 ? `Kec. ${item.name}` : item.name).join(' · ');
+}
 function tipShow(event, node) {
   const tip = tipElement(), O = opsiFor(node), result = resultOf(node), total = sahOf(node);
+  const context = tipContext(node), head = `<b>${esc(node.name)}</b>${context ? esc(context) + '<br>' : ''}`;
   if (!result || !result.present || !(total > 0)) {
-    tip.innerHTML = `<b>${esc(node.name)}</b>${LEVELS[node.lv]} · tidak ada perolehan ${esc(election().nama)}`;
+    tip.innerHTML = `${head}${LEVELS[node.lv]} · tidak ada perolehan ${esc(election().nama)}`;
   } else {
     const top = shownIndexes(O).map(index => [result.votes[index], index])
       .sort((a, b) => b[0] - a[0]).slice(0, 3);
-    tip.innerHTML = `<b>${esc(node.name)}</b>${LEVELS[node.lv]} · ${fmt(total)} pilihan sah<br>` +
+    tip.innerHTML = `${head}${LEVELS[node.lv]} · ${fmt(total)} pilihan sah<br>` +
       top.map(([value, index]) => `<span style="color:${O[index].warna}">■</span> ${esc(O[index].pendek)} ${pct(value / total)}`).join('<br>');
   }
   tip.style.opacity = 1;
@@ -1095,6 +1246,68 @@ function childSection(node, national) {
           <span class="cnm">${label}</span><span class="cvp">${pct(childVotes[childWinner] / childTotal, 0)}</span></button>`;
       }).join('')}</div></div>`;
 }
+/* Warna teks yang terbaca di atas segmen berwarna hex. */
+function inkOn(hex) {
+  const value = parseInt(String(hex).slice(1, 7), 16);
+  if (!Number.isFinite(value)) return '#fff';
+  const r = value >> 16 & 255, g = value >> 8 & 255, b = value & 255;
+  return (.299 * r + .587 * g + .114 * b) / 255 > .62 ? '#201e1d' : '#fff';
+}
+const capital = text => text.charAt(0).toUpperCase() + text.slice(1);
+const WINS_OTHER = '#b9b4b1';
+/* Berapa unit peta yang dimenangkan setiap opsi. Unitnya mengikuti peta: desa
+   di mode Batas Desa, wilayah anak di mode berjenjang, sehingga angka ini selalu
+   menjelaskan warna yang sedang tampak. Baris opsi adalah tombol sorot. */
+function winsSection(node) {
+  if (topShareView()) return '';
+  const units = activeUnits();
+  if (units.length < 2) return '';
+  const E = election(), O = opsi(), total = units.length, noun = unitNoun(units);
+  const counts = new Map();
+  let ties = 0, empty = 0;
+  for (const unit of units) {
+    const winner = winnerOf(unit);
+    if (winner != null) counts.set(winner, (counts.get(winner) || 0) + 1);
+    else if (isTie(unit)) ties += 1;
+    else empty += 1;
+  }
+  if (!counts.size) return '';
+  const ranked = [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+  const rest = ranked.slice(6).reduce((sum, [, count]) => sum + count, 0);
+  const segments = [
+    ...ranked.slice(0, 6).map(([index, count]) => ({ warna: O[index].warna, count, label: `${O[index].no}. ${O[index].pendek}`, opsi: index })),
+    ...(rest ? [{ warna: WINS_OTHER, count: rest, label: `${ranked.length - 6} ${E.jenis === 'calon' ? 'calon' : 'partai'} lainnya` }] : []),
+    ...(ties ? [{ warna: TIE_COLOR, count: ties, label: 'Seri' }] : []),
+    ...(empty ? [{ warna: NO_DATA, count: empty, label: 'Tanpa perolehan' }] : [])
+  ];
+  const bar = segments.map(segment => `<i style="flex:${segment.count};background:${segment.warna};color:${inkOn(segment.warna)}"
+    title="${esc(segment.label)} · ${fmt(segment.count)} ${esc(noun)}">${segment.count / total >= .08 ? pct(segment.count / total, 0) : ''}</i>`).join('');
+  const rows = segments.map(segment => {
+    const inner = `<span class="dot" style="background:${segment.warna}"></span><span class="wl">${esc(segment.label)}</span>
+      <span class="wc">${fmt(segment.count)}</span><span class="wp">${pct(segment.count / total)}</span>`;
+    return segment.opsi != null
+      ? `<button class="wrow" data-o="${segment.opsi}" aria-pressed="${S.sorot === segment.opsi}" title="Sorot ${esc(noun)} yang dimenangkan ${esc(segment.label)}">${inner}</button>`
+      : `<div class="wrow">${inner}</div>`;
+  }).join('');
+  // Porsi wilayah yang dimenangkan jarang sama dengan porsi suara; kalimat ini
+  // menjajarkan keduanya untuk pemenang wilayah terpilih.
+  const leader = winnerOf(node), sah = sahOf(node), won = counts.get(leader) || 0;
+  const insight = leader != null && sah > 0
+    ? `<b>${esc(O[leader].no)} ${esc(O[leader].pendek)}</b> unggul di ${fmt(won)} dari ${fmt(total)} ${esc(noun)} (${pct(won / total)}) dengan ${pct(votesOf(node)[leader] / sah)} pilihan sah. `
+    : '';
+  const drawn = desaFill(node);
+  const missing = drawn ? units.filter(unit => !geoKeys(drawn).has(unit.key)).length : 0;
+  const polygonNote = missing
+    ? `<div class="banner" style="margin-top:10px"><span>⚑</span><span><b>${fmt(missing)} desa belum memiliki poligon batas</b> sehingga tidak tergambar di peta; hasilnya tetap dihitung di sini serta tercantum di tabel dan CSV.</span></div>`
+    : '';
+  return `<div class="psec">
+      <div class="ph">${esc(capital(noun))} dimenangkan · ${fmt(total)} ${esc(noun)}</div>
+      <div class="wins">${bar}</div>
+      <div class="wrows">${rows}</div>
+      <div class="rmeta" style="margin-top:8px">${insight}Klik baris untuk menyorot di peta.</div>
+      ${polygonNote}
+    </div>`;
+}
 function renderPanel() {
   const node = S.sel, E = election(), result = resultOf(node);
   const votes = result ? result.votes : [], total = result && result.present ? votes.reduce((a, b) => a + b, 0) : null;
@@ -1107,6 +1320,7 @@ function renderPanel() {
       ${blocks.winner}
     </div>
     <div class="psec">${blocks.bars}</div>
+    ${winsSection(node)}
     ${statsSection(node, result, total)}
     <div class="psec">${coverageNote(node, result, total || 0)}</div>
     ${childSection(node, national)}`;
@@ -1114,6 +1328,9 @@ function renderPanel() {
   if (more) more.onclick = () => { showAll = !showAll; renderPanel(); };
   $('#panel').querySelectorAll('.chi[data-k]').forEach(element => {
     element.onclick = () => select(S.nodes.get(element.dataset.k));
+  });
+  $('#panel').querySelectorAll('.wrow[data-o]').forEach(element => {
+    element.onclick = () => setSorot(+element.dataset.o);
   });
 }
 
@@ -1126,8 +1343,21 @@ function renderCrumbs() {
     button.onclick = () => select(S.nodes.get(button.dataset.k));
   });
 }
+/* Baris tabel dan CSV: seluruh desa pada mode Batas Desa, selain itu anak
+   wilayah. Kolom induk menjaga desa bernama sama tetap dapat dibedakan. */
+const TABLE_LIMIT = 200;
+function tableUnits() { return desaView() ? leavesOf(S.sel) : S.sel.anak; }
+function parentColumns() {
+  if (!desaView()) return [];
+  return S.sel.lv === 1
+    ? [['Kab/Kota', 'kabupaten_kota', 2], ['Kecamatan', 'kecamatan', 3]]
+    : [['Kecamatan', 'kecamatan', 3]];
+}
 function renderTable() {
-  const node = S.sel, O = opsi(), children = node.anak, table = $('#dtable');
+  const node = S.sel, O = opsi(), children = tableUnits(), table = $('#dtable');
+  const desa = desaView(), parents = parentColumns();
+  const toggle = $('#ttoggle');
+  if (toggle) toggle.textContent = desa ? `Tabel desa · ${fmt(children.length)}` : 'Tabel rincian';
   if (!children.length) {
     table.innerHTML = `<tbody><tr><td style="padding:14px">Tidak ada rincian wilayah di bawah ${esc(node.name)}.</td></tr></tbody>`;
     return;
@@ -1147,12 +1377,18 @@ function renderTable() {
   const optionHeaders = national
     ? '<th>Calon teratas</th><th data-s="t" style="text-align:right">Porsi calon teratas</th>'
     : indexes.map(index => `<th data-s="${index}" style="text-align:right">${esc(O[index].no)} ${esc(O[index].pendek)}</th>`).join('') + '<th>Pemenang</th>';
-  table.innerHTML = `<thead><tr><th data-s="n">${ANAK[node.lv]}</th><th data-s="v" style="text-align:right">Pilihan sah (Σ opsi)</th>
+  const limit = S.tableAll ? rows.length : TABLE_LIMIT;
+  const columnCount = 5 + parents.length + (national ? 2 : indexes.length + 1);
+  const moreRow = rows.length > limit
+    ? `<tr><td colspan="${columnCount}"><button class="more" id="tmore">↓ Tampilkan semua ${fmt(rows.length)} ${desa ? 'desa' : 'wilayah'} (kini ${fmt(limit)})</button></td></tr>`
+    : '';
+  table.innerHTML = `<thead><tr><th data-s="n">${desa ? ANAK[3] : ANAK[node.lv]}</th>${parents.map(([label]) => `<th>${label}</th>`).join('')}
+      <th data-s="v" style="text-align:right">Pilihan sah (Σ opsi)</th>
       <th style="text-align:right">Partisipasi valid</th>
       <th style="text-align:right">TPS kosong</th>
       <th style="text-align:right">TPS suara ekstrem</th>
       ${optionHeaders}</tr></thead>
-    <tbody>${rows.map(({ child, votes, total, result }) => {
+    <tbody>${rows.slice(0, limit).map(({ child, votes, total, result }) => {
       const winner = winnerOf(child), turnout = turnoutOf(child), childOptions = opsiFor(child);
       const winnerCell = winner == null
         ? '<span class="dot" style="display:inline-block;background:' + (isTie(child) ? TIE_COLOR : NO_DATA) + '"></span> ' + (isTie(child) ? 'Seri' : 'Tidak ada data')
@@ -1160,12 +1396,15 @@ function renderTable() {
       const optionCells = national
         ? `<td>${winnerCell}</td><td style="text-align:right">${pct(topShareOf(child), 1)}</td>`
         : indexes.map(index => `<td style="text-align:right">${total > 0 ? pct(votes[index] / total, 1) : '—'}</td>`).join('') + `<td>${winnerCell}</td>`;
-      return `<tr><td class="nm" data-k="${esc(child.key)}">${esc(child.name)}</td><td style="text-align:right">${fmt(total)}</td>
+      const parentCells = parents.map(([, , level]) => `<td>${esc(ancestorAt(child, level).name)}</td>`).join('');
+      return `<tr><td class="nm" data-k="${esc(child.key)}">${esc(child.name)}</td>${parentCells}<td style="text-align:right">${fmt(total)}</td>
         <td style="text-align:right">${pct(turnout, 1)}</td>
         <td style="text-align:right">${fmt(statOf(result, 'blank-tps'))}</td>
         <td style="text-align:right">${fmt(statOf(result, 'outlier-vote-tps'))}</td>
         ${optionCells}</tr>`;
-    }).join('')}</tbody>`;
+    }).join('')}${moreRow}</tbody>`;
+  const more = $('#tmore');
+  if (more) more.onclick = () => { S.tableAll = true; renderTable(); };
   table.querySelectorAll('th[data-s]').forEach(header => {
     header.onclick = () => {
       const key = ['n', 'v', 't'].includes(header.dataset.s) ? header.dataset.s : +header.dataset.s;
@@ -1202,7 +1441,7 @@ function csvCell(value) {
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 function exportCSV() {
-  const node = S.sel, E = election(), children = node.anak;
+  const node = S.sel, E = election(), children = tableUnits(), desa = desaView(), parents = parentColumns();
   if (!children.length) return;
   // Kolom calon DPD hanya bermakna dalam satu provinsi: di tingkat nasional
   // setiap provinsi diekspor bersama calon teratasnya, di bawahnya tajuk kolom
@@ -1212,7 +1451,7 @@ function exportCSV() {
   const optionHead = national
     ? ['calon_teratas_no', 'calon_teratas_nama', 'calon_teratas_suara', 'calon_teratas_porsi']
     : indexes.map(index => E.jenis === 'calon' ? `${E.voteColumns[index]} ${O[index].nama}` : E.voteColumns[index]);
-  const head = ['kode_wilayah', 'wilayah', 'tingkat', 'rekaman_tersedia', 'pilihan_sah_jumlah_opsi',
+  const head = ['kode_wilayah', 'wilayah', ...parents.map(([, column]) => column), 'tingkat', 'rekaman_tersedia', 'pilihan_sah_jumlah_opsi',
     ...S.statNames, ...optionHead];
   const lines = [head.map(csvCell).join(',')];
   for (const child of children) {
@@ -1227,17 +1466,248 @@ function exportCSV() {
     } else {
       optionCells = indexes.map(index => present ? result.votes[index] : null);
     }
-    const row = [child.key, child.name, ANAK[node.lv], present ? 1 : 0, total,
+    const row = [child.key, child.name, ...parents.map(([, , level]) => ancestorAt(child, level).name),
+      desa ? ANAK[3] : ANAK[node.lv], present ? 1 : 0, total,
       ...S.statNames.map(name => statOf(result, name)), ...optionCells];
     lines.push(row.map(csvCell).join(','));
   }
-  const url = URL.createObjectURL(new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  downloadBlob(new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }),
+    `pemilu${S.D.id}-${S.pemilu}-${fileSlug(node)}${desa ? '-desa' : ''}.csv`);
+}
+function fileSlug(node) {
+  return node.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || node.key.toLowerCase();
+}
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  const slug = node.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || node.key.toLowerCase();
   link.href = url;
-  link.download = `pemilu${S.D.id}-${S.pemilu}-${slug}.csv`;
+  link.download = name;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/* ── ekspor PNG siap-laporan ─────────────────────────────────────── */
+/* Gambar yang berdiri sendiri untuk slide atau laporan: judul, keterangan
+   warna, peta seperti yang tampak (termasuk zoom dan sorot), legenda, dan
+   catatan sumber, dengan tata huruf halaman yang sama. */
+function mapDescription() {
+  const noun = unitNoun(), line = legendModel().line, O = opsi();
+  const color = S.mode === 'turnout' ? 'warna = partisipasi tervalidasi'
+    : topShareView() ? 'warna = porsi calon teratas di provinsinya'
+      : S.mode === 'share' ? `warna = perolehan ${O[S.fokus] ? O[S.fokus].pendek : ''}`
+        : S.mode === 'winner' ? `warna = pemenang per ${noun}` : `warna = pemenang per ${noun}, intensitas = margin`;
+  const sorot = S.sorot != null && O[S.sorot] ? `disorot: ${O[S.sorot].no} ${O[S.sorot].pendek}` : null;
+  return [`${fmt(activeUnits().length)} ${noun}`, color, line ? `garis tegas = ${line.toLowerCase()}` : null, sorot]
+    .filter(Boolean).join(' · ');
+}
+function wrapLines(ctx, text, width) {
+  const lines = [];
+  let line = '';
+  for (const word of String(text).split(/\s+/)) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(next).width > width) { lines.push(line); line = word; } else line = next;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+function alpha(hex, opacity) {
+  const value = parseInt(String(hex).slice(1, 7), 16);
+  return `rgba(${value >> 16 & 255},${value >> 8 & 255},${value & 255},${opacity})`;
+}
+/* Satu fungsi untuk mengukur (draw=false) dan menggambar (draw=true), supaya
+   tinggi kanvas selalu sama dengan isi yang benar-benar tergambar. */
+function paintReport(ctx, image, layout, draw) {
+  const { W, pad, width, height, ink, surface } = layout;
+  const innerW = W - pad * 2, muted = alpha(ink, .56), rule = alpha(ink, .4);
+  const setFont = (weight, size) => { ctx.font = `${weight} ${size}px Archivo, system-ui, sans-serif`; };
+  const put = (text, x, y, weight, size, color) => {
+    setFont(weight, size);
+    if (draw) { ctx.fillStyle = color; ctx.fillText(text, x, y); }
+    return ctx.measureText(text).width;
+  };
+  const box = (x, y, w, h, color) => { if (draw) { ctx.fillStyle = color; ctx.fillRect(x, y, w, h); } };
+  ctx.textBaseline = 'top';
+  const node = S.sel, model = legendModel();
+  let y = pad;
+  put(`PEMILU ${S.D.id} · ${CONTEST_NAMES[S.pemilu][1].toUpperCase()} · ${LEVELS[node.lv].toUpperCase()}`, pad, y, 600, 11, muted);
+  y += 20;
+  put(node.name, pad, y, 800, 30, ink);
+  y += 40;
+  setFont(400, 13);
+  for (const line of wrapLines(ctx, mapDescription(), innerW)) { put(line, pad, y, 400, 13, alpha(ink, .72)); y += 19; }
+  y += 10;
+  box(pad, y, innerW, 2, ink);
+  y += 2;
+  box(pad, y, innerW, height, surface);
+  if (draw) ctx.drawImage(image, pad + (innerW - width) / 2, y, width, height);
+  y += height;
+  box(pad, y, innerW, 1, rule);
+  y += 14;
+  put(model.title.toUpperCase(), pad, y, 600, 10, muted);
+  y += 18;
+  let x = pad;
+  const fit = w => { if (x > pad && x + w > pad + innerW) { x = pad; y += 20; } };
+  setFont(400, 12);
+  if (model.ramp) {
+    const lo = ctx.measureText(model.ramp.lo).width, hi = ctx.measureText(model.ramp.hi).width;
+    fit(lo + hi + 138);
+    put(model.ramp.lo, x, y, 400, 12, ink);
+    x += lo + 6;
+    model.ramp.colors.forEach((color, index) => box(x + index * 14, y + 1, 14, 11, color));
+    x += 132;
+    put(model.ramp.hi, x, y, 400, 12, ink);
+    x += hi + 18;
+  }
+  for (const item of model.items) {
+    const picked = item.opsi != null && item.opsi === S.sorot;
+    setFont(picked ? 700 : 400, 12);
+    const w = 18 + ctx.measureText(item.label).width;
+    fit(w);
+    box(x, y + 1, 12, 12, S.sorot != null && item.opsi != null && !picked ? alpha(item.warna, .3) : item.warna);
+    put(item.label, x + 18, y, picked ? 700 : 400, 12, ink);
+    x += w + 16;
+  }
+  if (model.line) {
+    setFont(400, 12);
+    const w = 24 + ctx.measureText(model.line).width;
+    fit(w);
+    box(x, y + 6, 18, 2, ink);
+    put(model.line, x + 24, y, 400, 12, ink);
+  }
+  y += 30;
+  box(pad, y, innerW, 1, rule);
+  y += 10;
+  setFont(400, 10.5);
+  const source = `Sumber: ${$('#srcnote').textContent}`;
+  for (const line of wrapLines(ctx, source, innerW)) { put(line, pad, y, 400, 10.5, muted); y += 15; }
+  return y + pad - 6;
+}
+async function exportPNG() {
+  if (!S.hasGeoView || typeof XMLSerializer === 'undefined') return;
+  const button = $('#tpng'), label = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Menyiapkan PNG…';
+  try {
+    const source = $('#map'), [width, height] = dims, scale = 2;
+    const style = getComputedStyle(document.documentElement);
+    const token = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+    const layout = {
+      W: Math.max(width, 720) + 64, pad: 32, width, height,
+      bg: token('--color-bg', '#f3f2f2'), ink: token('--color-text', '#201e1d'), surface: token('--color-surface', '#eae9e9')
+    };
+    // Kelas CSS tidak ikut ke gambar SVG mandiri, jadi gaya garis ditanam
+    // sebagai atribut. Garis non-scaling diukur dalam piksel gambar 2x.
+    const clone = source.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('width', width * scale);
+    clone.setAttribute('height', height * scale);
+    const dense = source.classList.contains('dense');
+    clone.querySelectorAll('path.region').forEach(region => {
+      const selected = region.classList.contains('sel');
+      region.setAttribute('stroke', selected ? layout.ink : layout.bg);
+      region.setAttribute('stroke-width', (selected ? 1.6 : dense ? .25 : .6) * scale);
+      region.setAttribute('stroke-linejoin', 'round');
+      region.setAttribute('vector-effect', 'non-scaling-stroke');
+      if (region.classList.contains('dim')) region.setAttribute('opacity', .22);
+    });
+    clone.querySelectorAll('path.bound').forEach(bound => {
+      bound.setAttribute('fill', 'none');
+      bound.setAttribute('stroke', layout.ink);
+      bound.setAttribute('stroke-width', 1.2 * scale);
+      bound.setAttribute('stroke-linejoin', 'round');
+      bound.setAttribute('vector-effect', 'non-scaling-stroke');
+    });
+    const svgUrl = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml;charset=utf-8' }));
+    const image = new Image();
+    try {
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = () => reject(new Error('SVG peta gagal dirender'));
+        image.src = svgUrl;
+      });
+    } finally {
+      URL.revokeObjectURL(svgUrl);
+    }
+    if (document.fonts && document.fonts.ready) await document.fonts.ready;
+    const total = paintReport(document.createElement('canvas').getContext('2d'), image, layout, false);
+    const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+    canvas.width = layout.W * scale;
+    canvas.height = Math.ceil(total * scale);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = layout.bg;
+    ctx.fillRect(0, 0, layout.W, total);
+    paintReport(ctx, image, layout, true);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('kanvas tidak menghasilkan PNG');
+    downloadBlob(blob, `pemilu${S.D.id}-${S.pemilu}-${fileSlug(S.sel)}${desaView() ? '-desa' : ''}.png`);
+  } catch (error) {
+    console.error('Ekspor PNG gagal', error);
+    alert(`Ekspor PNG gagal: ${error.message}`);
+  } finally {
+    button.textContent = label;
+    button.disabled = !S.hasGeoView;
+  }
+}
+
+/* ── tautan yang dapat dibagikan ─────────────────────────────────── */
+/* #<tahun>/<kontes>/<kode wilayah>?warna=…&batas=desa&fokus=<nomor urut>.
+   Hash ditulis ulang dengan replaceState setiap render, jadi bilah alamat
+   selalu memuat tampilan yang sedang dilihat tanpa memenuhi riwayat. */
+const WARNA = { winner: 'pemenang', margin: 'margin', share: 'perolehan', turnout: 'partisipasi' };
+function stateHash() {
+  if (!S.sel || !S.tahun || !S.pemilu) return '';
+  const parts = [S.tahun, S.pemilu];
+  if (S.sel !== S.root) parts.push(S.sel.key);
+  const params = [];
+  if (S.mode !== 'margin') params.push(`warna=${WARNA[S.mode]}`);
+  if (S.batas === 'desa') params.push('batas=desa');
+  const option = opsi()[S.fokus];
+  if (S.mode === 'share' && option && !topShareView()) params.push(`fokus=${encodeURIComponent(option.no)}`);
+  return '#' + parts.map(encodeURIComponent).join('/') + (params.length ? '?' + params.join('&') : '');
+}
+function parseHash(hash) {
+  const text = String(hash || '').replace(/^#\/?/, '');
+  if (!text) return null;
+  try {
+    const [route, query = ''] = text.split('?');
+    const [tahun, pemilu, key] = route.split('/').map(part => decodeURIComponent(part || ''));
+    const params = new URLSearchParams(query);
+    return { tahun, pemilu, key, warna: params.get('warna'), batas: params.get('batas'), fokus: params.get('fokus') };
+  } catch (error) {
+    return null;
+  }
+}
+/* Menerapkan tautan ke bundel tahun yang sudah aktif. Bagian yang tidak
+   dikenal (kontes tanpa data, kode wilayah lama) diabaikan diam-diam. */
+function applyLinked(linked) {
+  const mode = Object.keys(WARNA).find(key => WARNA[key] === linked.warna);
+  if (mode) S.mode = mode;
+  if (linked.batas === 'desa' || linked.batas === 'berjenjang') S.batas = linked.batas;
+  if (linked.pemilu && S.contestsById.has(linked.pemilu)) S.pemilu = linked.pemilu;
+  if (linked.key && S.nodes.has(linked.key)) S.sel = S.nodes.get(linked.key);
+  else if (!linked.key) S.sel = S.root;
+  if (linked.fokus != null) {
+    const index = opsiFor(S.sel).findIndex(option => option.no === linked.fokus && !option.absent);
+    if (index >= 0) S.fokus = index;
+  }
+  S.sorot = null;
+}
+function writeHash() {
+  if (typeof history === 'undefined' || !history.replaceState || typeof location === 'undefined') return;
+  const hash = stateHash();
+  if (hash && location.hash !== hash) history.replaceState(null, '', location.pathname + hash);
+}
+async function copyLink() {
+  writeHash();
+  const button = $('#tlink'), url = location.href;
+  try {
+    await navigator.clipboard.writeText(url);
+    button.textContent = 'Tautan tersalin';
+  } catch (error) {
+    // Konteks tanpa izin clipboard: tampilkan tautan agar bisa disalin manual.
+    window.prompt('Salin tautan tampilan ini:', url);
+  }
+  setTimeout(() => { button.textContent = 'Salin tautan'; }, 1600);
 }
 
 /* ── orkestrasi ──────────────────────────────────────────────────── */
@@ -1257,15 +1727,27 @@ let selectVersion = 0;
 async function select(node) {
   if (!node) return;
   const version = ++selectVersion;
+  // Roster DPD berganti per provinsi, jadi sorot calon tidak berlaku lintas provinsi.
+  const E = election();
+  if (E && E.jenis === 'calon' && provinceOf(node) !== provinceOf(S.sel)) S.sorot = null;
   S.sel = node;
   showAll = false;
+  S.tableAll = false;
   await prepareSelection(node);
   if (version !== selectVersion) return;
   await renderAll();
 }
+function viewInfo() {
+  if (!S.hasGeoView) return 'Grid wilayah · GeoJSON tidak tersedia';
+  if (desaView()) return `Peta per desa · ${fmt(activeUnits().length)} desa · ${S.D.geoNote}`;
+  if (S.batas === 'desa' && S.sel.lv === 0) return 'Batas desa tersedia setelah memilih provinsi';
+  if (wantsDesa(S.sel)) return 'Batas desa gagal dimuat · memakai batas berjenjang';
+  return `Peta geografis · ${S.D.geoNote}`;
+}
 async function renderAll() {
   renderCrumbs();
   renderModes();
+  renderBatas();
   updateScale();
   renderLegend();
   S.hasGeoView = await drawGeo();
@@ -1273,11 +1755,14 @@ async function renderAll() {
   $('#zoombtns').style.display = S.hasGeoView ? '' : 'none';
   $('#gridwrap').hidden = S.hasGeoView;
   if (!S.hasGeoView) renderGrid();
-  $('#viewinfo').textContent = S.hasGeoView ? `Peta geografis · ${S.D.geoNote}` : 'Grid wilayah · GeoJSON tidak tersedia';
+  $('#viewinfo').textContent = viewInfo();
+  const png = $('#tpng');
+  if (png) png.disabled = !S.hasGeoView;
   renderLocator();
   renderPanel();
   renderTable();
   updateSourceNote();
+  writeHash();
 }
 
 /* ── pemuatan dataset per tahun ──────────────────────────────────── */
@@ -1337,7 +1822,7 @@ function nodeByNames(names) {
   return node;
 }
 let yearVersion = 0;
-async function selectYear(id, initial = false) {
+async function selectYear(id, initial = false, linked = null) {
   const dataset = datasetById(id);
   if (!initial && S.tahun === dataset.id) return;
   const version = ++yearVersion;
@@ -1369,7 +1854,9 @@ async function selectYear(id, initial = false) {
   S.mapViewKey = null;
   S.mapViewNodeKey = null;
   S.mapCollection = null;
+  S.sorot = null;
   S.sel = names.length ? nodeByNames(names) : S.root;
+  if (linked) applyLinked(linked);
   document.title = `Peta Hasil Pemilu Indonesia ${dataset.id}`;
   renderYears();
   renderTabs();
@@ -1379,11 +1866,13 @@ async function selectYear(id, initial = false) {
 }
 
 async function boot() {
-  const requested = new URLSearchParams(location.search).get('tahun');
+  // Hash tautan lebih diutamakan daripada ?tahun= yang lebih lama.
+  const linked = parseHash(location.hash);
+  const requested = (linked && linked.tahun) || new URLSearchParams(location.search).get('tahun');
   const startId = DATASETS.some(dataset => dataset.id === requested) ? requested : DEFAULT_YEAR;
   try {
     initMap();
-    await selectYear(startId, true);
+    await selectYear(startId, true, linked);
   } catch (error) {
     console.error(error);
     loadingBox('Gagal memuat data: ' + error.message);
@@ -1393,11 +1882,31 @@ async function boot() {
   $('#q').addEventListener('blur', () => setTimeout(() => { $('#qr').hidden = true; }, 180));
   $('#ttoggle').onclick = () => $('#tablewrap').classList.toggle('open');
   $('#tcsv').onclick = exportCSV;
+  $('#tpng').onclick = exportPNG;
+  $('#tlink').onclick = copyLink;
   addEventListener('resize', () => { if (S.sel) renderAll(); });
+  // Tautan yang ditempel ke tab yang sama; tulisan replaceState sendiri tidak
+  // memicu hashchange, jadi tidak ada putaran.
+  addEventListener('hashchange', () => {
+    const linked = parseHash(location.hash);
+    if (!linked || location.hash === stateHash()) return;
+    if (linked.tahun && linked.tahun !== S.tahun && DATASETS.some(dataset => dataset.id === linked.tahun)) {
+      selectYear(linked.tahun, false, linked);
+      return;
+    }
+    applyLinked(linked);
+    renderTabs();
+    select(S.sel);
+  });
   addEventListener('keydown', event => {
     if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') return;
     if ((event.key === 'Escape' || event.key === 'Backspace') && S.sel && S.sel.parent) { event.preventDefault(); select(S.sel.parent); }
     if (event.key === '/') { event.preventDefault(); $('#q').focus(); }
+    if ((event.key === 'd' || event.key === 'D') && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      setBatas(S.batas === 'desa' ? 'berjenjang' : 'desa');
+      return;
+    }
     if (event.key === 't' || event.key === 'T') {
       const order = DATASETS.map(dataset => dataset.id);
       const next = order[(order.indexOf(S.tahun) + 1) % order.length];
@@ -1416,7 +1925,8 @@ if (typeof module !== 'undefined' && module.exports) {
     PARTY_SPEC, PARTY_SPEC_2024, PASLON_2019, PASLON_2024, DATASETS, CONTEST_ORDER,
     CONTEST_NAMES, S, normalizeContests, buildTree, installElectionData,
     parseEntry, combineResults, resultOf, leadersOf, winnerOf, isTie, marginOf, featureNode, columnKey,
-    selectYear, select, nodeByNames, opsiFor, shownIndexes, candidateShortName, DPD_SEATS
+    selectYear, select, nodeByNames, opsiFor, shownIndexes, candidateShortName, DPD_SEATS,
+    setBatas, setSorot, desaView, leavesOf, activeUnits, stateHash, parseHash
   };
 }
 if (typeof document !== 'undefined') boot();
